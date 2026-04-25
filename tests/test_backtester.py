@@ -1,12 +1,12 @@
 import pandas as pd
 import pytest
 
-import src.algo_backtester.backtester as backtester_module
-from src.algo_backtester.backtester import TrendPullbackBacktester
-from src.algo_backtester.data_loader import make_demo_data, validate_ohlcv
-from src.algo_backtester.metrics import performance_summary
-from src.algo_backtester.options_engine import recommend_options_trade
-from src.algo_backtester.reporting import latest_signal
+import algo_backtester.backtester as backtester_module
+from algo_backtester.backtester import TrendPullbackBacktester
+from algo_backtester.data_loader import make_demo_data, validate_ohlcv
+from algo_backtester.metrics import performance_summary
+from algo_backtester.options_engine import recommend_options_trade
+from algo_backtester.reporting import latest_signal
 
 
 def test_backtest_runs_with_demo_data():

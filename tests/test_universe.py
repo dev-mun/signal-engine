@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 
 import pandas as pd
 
-import src.algo_backtester.scanner as scanner_module
-from src.algo_backtester.config import BacktestConfig
-from src.algo_backtester.universe import evaluate_universe_eligibility
+import algo_backtester.scanner as scanner_module
+from algo_backtester.config import BacktestConfig
+from algo_backtester.universe import evaluate_universe_eligibility
 
 
 class FakeOptionChain:

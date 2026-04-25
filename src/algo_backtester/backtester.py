@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 from typing import Tuple
 
 import pandas as pd
 
-from src.algo_backtester.config import BacktestConfig
-from src.algo_backtester.data_loader import validate_ohlcv
-from src.algo_backtester.indicators import add_indicators
-from src.algo_backtester.strategy import (
+from algo_backtester.config import BacktestConfig
+from algo_backtester.data_loader import validate_ohlcv
+from algo_backtester.indicators import add_indicators
+from algo_backtester.strategy import (
     should_bearish_entry,
     should_buy,
     should_exit_long,

@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Iterable
 
-from src.algo_backtester.backtester import TrendPullbackBacktester
-from src.algo_backtester.config import BacktestConfig
-from src.algo_backtester.data_loader import load_yfinance_data
-from src.algo_backtester.options_engine import recommend_options_trade
-from src.algo_backtester.universe import evaluate_universe_eligibility
+from algo_backtester.backtester import TrendPullbackBacktester
+from algo_backtester.config import BacktestConfig
+from algo_backtester.data_loader import load_yfinance_data
+from algo_backtester.options_engine import recommend_options_trade
+from algo_backtester.universe import evaluate_universe_eligibility
 
 
 def classify_setup(signal: str, rsi: float) -> str:

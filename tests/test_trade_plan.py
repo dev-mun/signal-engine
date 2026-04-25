@@ -1,5 +1,5 @@
-from src.algo_backtester.options_engine import OptionsRecommendation
-from src.algo_backtester.trade_plan import build_signal_interpretation, build_trade_plan
+from algo_backtester.options_engine import OptionsRecommendation
+from algo_backtester.trade_plan import build_signal_interpretation, build_trade_plan
 
 
 def make_no_trade_options_rec(signal: str) -> OptionsRecommendation:

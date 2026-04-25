@@ -289,6 +289,10 @@ CSV mode is only used when explicitly passed.
 
 # Installation
 
+Supported Python: `3.9+`
+
+Use a virtual environment and keep the same interpreter active for installs, tests, and runs.
+
 ## macOS / Linux
 
 ```bash

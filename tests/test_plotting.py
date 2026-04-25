@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from src.algo_backtester.plotting import build_signal_overlay_data
+from algo_backtester.plotting import build_signal_overlay_data
 
 
 def test_build_signal_overlay_data_creates_markers_and_trade_lines():

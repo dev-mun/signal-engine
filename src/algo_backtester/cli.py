@@ -1,22 +1,22 @@
 import argparse
 from pathlib import Path
 
-from src.algo_backtester.backtester import TrendPullbackBacktester
-from src.algo_backtester.config import BacktestConfig
-from src.algo_backtester.data_loader import load_csv, load_yfinance_data, make_demo_data
-from src.algo_backtester.metrics import buy_and_hold_curve, performance_summary, print_summary
-from src.algo_backtester.options_engine import (
+from algo_backtester.backtester import TrendPullbackBacktester
+from algo_backtester.config import BacktestConfig
+from algo_backtester.data_loader import load_csv, load_yfinance_data, make_demo_data
+from algo_backtester.metrics import buy_and_hold_curve, performance_summary, print_summary
+from algo_backtester.options_engine import (
     print_options_recommendation,
     recommend_options_trade,
 )
-from src.algo_backtester.plotting import plot_results
-from src.algo_backtester.reporting import print_latest_signal, save_reports
-from src.algo_backtester.scanner import (
+from algo_backtester.plotting import plot_results
+from algo_backtester.reporting import print_latest_signal, save_reports
+from algo_backtester.scanner import (
     print_scan_results,
     save_scan_results,
     scan_watchlist,
 )
-from src.algo_backtester.trade_plan import (
+from algo_backtester.trade_plan import (
     build_signal_interpretation,
     build_trade_plan,
     print_signal_interpretation,

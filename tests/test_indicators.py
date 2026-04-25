@@ -1,5 +1,5 @@
-from src.algo_backtester.data_loader import make_demo_data, validate_ohlcv
-from src.algo_backtester.indicators import add_indicators
+from algo_backtester.data_loader import make_demo_data, validate_ohlcv
+from algo_backtester.indicators import add_indicators
 
 
 def test_indicators_are_created():

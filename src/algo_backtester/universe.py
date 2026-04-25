@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Optional
@@ -5,7 +7,7 @@ from typing import Optional
 import pandas as pd
 import yfinance as yf
 
-from src.algo_backtester.data_loader import validate_ohlcv
+from algo_backtester.data_loader import validate_ohlcv
 
 ETF_SYMBOLS = {
     "SPY",

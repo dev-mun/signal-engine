@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from src.algo_backtester.data_loader import validate_ohlcv
+from algo_backtester.data_loader import validate_ohlcv
 
 
 def performance_summary(equity_df: pd.DataFrame, trades_df: pd.DataFrame, initial_cash: float = 10_000.0) -> dict:
