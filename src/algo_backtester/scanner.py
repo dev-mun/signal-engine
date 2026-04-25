@@ -1,11 +1,22 @@
 from pathlib import Path
 from typing import Iterable
 
+import pandas as pd
+from pandas.tseries.offsets import BDay
+
 from algo_backtester.backtester import TrendPullbackBacktester
 from algo_backtester.config import BacktestConfig
 from algo_backtester.data_loader import load_yfinance_data
 from algo_backtester.options_engine import recommend_options_trade
+from algo_backtester.trade_plan import build_trade_plan
 from algo_backtester.universe import evaluate_universe_eligibility
+
+
+def _latest_date_string(df: pd.DataFrame) -> str:
+    if "Date" in df.columns:
+        return str(pd.Timestamp(df["Date"].iloc[-1]).date())
+
+    return str(pd.Timestamp(df.index[-1]).date())
 
 
 def classify_setup(signal: str, rsi: float) -> str:
@@ -71,8 +82,11 @@ def scan_ticker(
     )
 
     if enforce_universe_filter and not eligibility.is_eligible:
+        signal_date = _latest_date_string(raw_df)
         return {
             "Ticker": ticker,
+            "SignalDate": signal_date,
+            "PlannedExecutionDate": str((pd.Timestamp(signal_date) + BDay(1)).date()),
             "UniverseStatus": eligibility.status,
             "UniverseReason": eligibility.reason,
             "Signal": "INELIGIBLE",
@@ -89,12 +103,26 @@ def scan_ticker(
             "OptionsReason": eligibility.reason,
             "AvgDollarVolume": eligibility.avg_dollar_volume,
             "EarningsDate": eligibility.earnings_date,
+            "Expiration": "N/A",
+            "LongStrike": 0.0,
+            "ShortStrike": 0.0,
+            "EstimatedDebit": 0.0,
+            "MaxLoss": 0.0,
+            "MaxProfit": 0.0,
+            "TradeQuality": "FILTERED_OUT",
+            "PlannedEntryReference": "",
+            "StopLoss": "",
+            "TakeProfit": "",
+            "RiskPerShare": "",
+            "RewardPerShare": "",
         }
 
     bt = TrendPullbackBacktester(config=config)
     _, _, _, signals_df = bt.run(raw_df)
 
     latest = signals_df.iloc[-1]
+    signal_date = str(signals_df.index[-1].date())
+    planned_execution_date = str((pd.Timestamp(signal_date) + BDay(1)).date())
 
     signal = str(latest["Signal"])
     price = float(latest["Close"])
@@ -116,9 +144,18 @@ def scan_ticker(
         min_dte=config.option_min_dte,
         max_dte=config.option_max_dte,
     )
+    trade_plan = build_trade_plan(
+        signal=signal,
+        entry_price=price,
+        stop_loss_pct=config.stop_loss,
+        take_profit_pct=config.take_profit,
+        trailing_stop_pct=config.trailing_stop,
+    )
 
     return {
         "Ticker": ticker,
+        "SignalDate": signal_date,
+        "PlannedExecutionDate": planned_execution_date,
         "UniverseStatus": eligibility.status,
         "UniverseReason": eligibility.reason,
         "Signal": signal,
@@ -135,6 +172,18 @@ def scan_ticker(
         "OptionsReason": options_rec.reason,
         "AvgDollarVolume": eligibility.avg_dollar_volume,
         "EarningsDate": eligibility.earnings_date,
+        "Expiration": options_rec.expiration,
+        "LongStrike": options_rec.long_strike,
+        "ShortStrike": options_rec.short_strike,
+        "EstimatedDebit": options_rec.estimated_debit,
+        "MaxLoss": options_rec.max_loss,
+        "MaxProfit": options_rec.max_profit,
+        "TradeQuality": options_rec.trade_quality,
+        "PlannedEntryReference": trade_plan.get("EstimatedEntryReference", ""),
+        "StopLoss": trade_plan.get("StopLoss", ""),
+        "TakeProfit": trade_plan.get("TakeProfit", ""),
+        "RiskPerShare": trade_plan.get("RiskPerShare", ""),
+        "RewardPerShare": trade_plan.get("RewardPerShare", ""),
     }
 
 
@@ -164,6 +213,8 @@ def scan_watchlist(
             results.append(
                 {
                     "Ticker": clean_ticker,
+                    "SignalDate": str(pd.Timestamp.today().date()),
+                    "PlannedExecutionDate": str((pd.Timestamp.today() + BDay(1)).date()),
                     "UniverseStatus": "ERROR",
                     "UniverseReason": str(exc),
                     "Signal": "ERROR",
@@ -180,6 +231,18 @@ def scan_watchlist(
                     "OptionsReason": str(exc),
                     "AvgDollarVolume": 0.0,
                     "EarningsDate": "UNKNOWN",
+                    "Expiration": "N/A",
+                    "LongStrike": 0.0,
+                    "ShortStrike": 0.0,
+                    "EstimatedDebit": 0.0,
+                    "MaxLoss": 0.0,
+                    "MaxProfit": 0.0,
+                    "TradeQuality": "ERROR",
+                    "PlannedEntryReference": "",
+                    "StopLoss": "",
+                    "TakeProfit": "",
+                    "RiskPerShare": "",
+                    "RewardPerShare": "",
                 }
             )
 

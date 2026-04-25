@@ -5,6 +5,7 @@ from algo_backtester.backtester import TrendPullbackBacktester
 from algo_backtester.config import BacktestConfig
 from algo_backtester.data_loader import load_csv, load_yfinance_data, make_demo_data
 from algo_backtester.metrics import buy_and_hold_curve, performance_summary, print_summary
+from algo_backtester.journal import update_paper_trading_journal
 from algo_backtester.options_engine import (
     print_options_recommendation,
     recommend_options_trade,
@@ -50,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--option-max-dte", type=int, default=45)
     parser.add_argument("--earnings-buffer-days", type=int, default=3)
     parser.add_argument("--no-universe-filter", action="store_true")
+    parser.add_argument("--journal", action="store_true")
 
     parser.add_argument(
         "--scan",
@@ -110,6 +112,8 @@ def main() -> None:
         )
         print_scan_results(results)
         save_scan_results(results, output_dir=args.output_dir)
+        if args.journal:
+            update_paper_trading_journal(results=results, output_dir=args.output_dir)
         return
 
     label, raw_df = load_input_data(args)

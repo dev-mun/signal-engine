@@ -8,32 +8,54 @@ def build_trade_plan(
         take_profit_pct: float,
         trailing_stop_pct: float,
 ) -> dict:
-    if signal != "BUY":
+    if signal == "BUY":
+        stop_loss_price = entry_price * (1 - stop_loss_pct)
+        take_profit_price = entry_price * (1 + take_profit_pct)
+        initial_trailing_stop = entry_price * (1 - trailing_stop_pct)
+
+        risk_per_share = entry_price - stop_loss_price
+        reward_per_share = take_profit_price - entry_price
+        reward_risk = reward_per_share / risk_per_share if risk_per_share > 0 else 0.0
+
         return {
             "Signal": signal,
-            "HasActionableTrade": False,
-            "TradePlan": "No new long trade plan because signal is not BUY.",
+            "HasActionableTrade": True,
+            "EstimatedEntryReference": round(entry_price, 2),
+            "ActualEntry": "Next market open",
+            "StopLoss": round(stop_loss_price, 2),
+            "TakeProfit": round(take_profit_price, 2),
+            "InitialTrailingStop": round(initial_trailing_stop, 2),
+            "RiskPerShare": round(risk_per_share, 2),
+            "RewardPerShare": round(reward_per_share, 2),
+            "RewardRisk": round(reward_risk, 2),
         }
 
-    stop_loss_price = entry_price * (1 - stop_loss_pct)
-    take_profit_price = entry_price * (1 + take_profit_pct)
-    initial_trailing_stop = entry_price * (1 - trailing_stop_pct)
+    if signal == "BEARISH_ENTRY":
+        stop_loss_price = entry_price * (1 + stop_loss_pct)
+        take_profit_price = entry_price * (1 - take_profit_pct)
+        initial_trailing_stop = entry_price * (1 + trailing_stop_pct)
 
-    risk_per_share = entry_price - stop_loss_price
-    reward_per_share = take_profit_price - entry_price
-    reward_risk = reward_per_share / risk_per_share if risk_per_share > 0 else 0.0
+        risk_per_share = stop_loss_price - entry_price
+        reward_per_share = entry_price - take_profit_price
+        reward_risk = reward_per_share / risk_per_share if risk_per_share > 0 else 0.0
+
+        return {
+            "Signal": signal,
+            "HasActionableTrade": True,
+            "EstimatedEntryReference": round(entry_price, 2),
+            "ActualEntry": "Next market open",
+            "StopLoss": round(stop_loss_price, 2),
+            "TakeProfit": round(take_profit_price, 2),
+            "InitialTrailingStop": round(initial_trailing_stop, 2),
+            "RiskPerShare": round(risk_per_share, 2),
+            "RewardPerShare": round(reward_per_share, 2),
+            "RewardRisk": round(reward_risk, 2),
+        }
 
     return {
         "Signal": signal,
-        "HasActionableTrade": True,
-        "EstimatedEntryReference": round(entry_price, 2),
-        "ActualEntry": "Next market open",
-        "StopLoss": round(stop_loss_price, 2),
-        "TakeProfit": round(take_profit_price, 2),
-        "InitialTrailingStop": round(initial_trailing_stop, 2),
-        "RiskPerShare": round(risk_per_share, 2),
-        "RewardPerShare": round(reward_per_share, 2),
-        "RewardRisk": round(reward_risk, 2),
+        "HasActionableTrade": False,
+        "TradePlan": "No new entry trade plan because signal is not BUY or BEARISH_ENTRY.",
     }
 
 
@@ -102,10 +124,24 @@ def build_signal_interpretation(
         )
         interpretation["WhatToDoToday"] = "Prepare a bearish thesis for the next session open if you trade this setup."
         interpretation["HowOptionsFit"] = "This bearish thesis can be expressed with a put debit spread."
-        interpretation["PlannedTradeLevels"] = [
-            "No short-stock stop or profit target is printed yet.",
-            "Bearish stock execution rules are not backtested in the current engine.",
-        ]
+        if trade_plan.get("HasActionableTrade"):
+            interpretation["PlannedTradeLevels"] = [
+                f"Estimated Short Reference: ${trade_plan['EstimatedEntryReference']:.2f}",
+                f"Actual Entry: {trade_plan['ActualEntry']}",
+                f"Stop Loss: ${trade_plan['StopLoss']:.2f}",
+                f"Take Profit: ${trade_plan['TakeProfit']:.2f}",
+                f"Initial Trailing Stop: ${trade_plan['InitialTrailingStop']:.2f}",
+            ]
+            interpretation["RiskReward"] = [
+                f"Risk per Share: ${trade_plan['RiskPerShare']:.2f}",
+                f"Reward per Share: ${trade_plan['RewardPerShare']:.2f}",
+                f"Reward/Risk: {trade_plan['RewardRisk']:.2f}",
+            ]
+        else:
+            interpretation["PlannedTradeLevels"] = [
+                "No short-stock stop or profit target is printed yet.",
+                "Bearish stock execution rules are not backtested in the current engine.",
+            ]
     elif signal == "HOLD_POSITION":
         interpretation["Meaning"] = "The existing long position remains valid."
         interpretation["SystemSees"] = f"No exit condition fired, so the long trade is still active. Current state: {reason}."

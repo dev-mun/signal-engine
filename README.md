@@ -323,6 +323,12 @@ Run scanner first:
 python main.py --scan SPY,QQQ,MSFT,META,NVDA,AAPL --no-plot
 ```
 
+Auto-save the Excel paper-trading journal while scanning:
+
+```bash
+python main.py --scan SPY,QQQ,MSFT,META,NVDA,AAPL --no-plot --journal
+```
+
 This prints:
 
 - eligible names
@@ -337,6 +343,7 @@ It also saves:
 
 ```text
 reports/watchlist_scan_YYYY-MM-DD.csv
+reports/paper_trading_journal.xlsx
 ```
 
 ---

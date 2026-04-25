@@ -95,3 +95,26 @@ def test_build_signal_interpretation_for_bearish_entry_is_truthful_about_backtes
 
     assert "does not yet simulate short stock positions" in interpretation["BacktesterSimulates"]
     assert interpretation["HowOptionsFit"] == "This bearish thesis can be expressed with a put debit spread."
+    assert "Estimated Short Reference: $180.00" in interpretation["PlannedTradeLevels"]
+    assert "Stop Loss: $194.40" in interpretation["PlannedTradeLevels"]
+    assert "Reward/Risk: 2.50" in interpretation["RiskReward"]
+
+
+def test_build_trade_plan_for_bearish_entry_returns_exact_levels():
+    plan = build_trade_plan(
+        signal="BEARISH_ENTRY",
+        entry_price=180.0,
+        stop_loss_pct=0.08,
+        take_profit_pct=0.20,
+        trailing_stop_pct=0.08,
+    )
+
+    assert plan["HasActionableTrade"] is True
+    assert plan["EstimatedEntryReference"] == 180.0
+    assert plan["ActualEntry"] == "Next market open"
+    assert plan["StopLoss"] == 194.4
+    assert plan["TakeProfit"] == 144.0
+    assert plan["InitialTrailingStop"] == 194.4
+    assert plan["RiskPerShare"] == 14.4
+    assert plan["RewardPerShare"] == 36.0
+    assert plan["RewardRisk"] == 2.5
