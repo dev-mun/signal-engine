@@ -12,6 +12,8 @@ venv/
 env/
 
 reports/
+!src/algo_backtester/reports/
+!src/algo_backtester/reports/*.py
 
 *.dmg
 
