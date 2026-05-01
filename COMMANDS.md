@@ -7,55 +7,88 @@
 Run after market close:
 
 ```bash
-python main.py --scan SPY,DIA,CRM,PLTR,SHOP,UBER --strategy ema-rsi --no-plot --journal
+python main.py --scan --strategy ema-rsi --no-plot --journal
 ```
 
 Purpose:
 
 - slower swing scan
-- updates daily journal
-- only checks high-quality daily setups
+- broad market profile
+- daily journal update
+- higher-conviction trend setups
 
-### 2. Daily 4H Scan
+---
+
+### 2. Daily 4H Trend Scan
 
 Run after market close:
 
 ```bash
-python main.py --scan SPY,QQQ,IWM,DIA,AAPL,MSFT,NVDA,AMZN,CRM,PLTR,SHOP,UBER,META,GOOGL,AVGO,TSM,PANW,CRWD --strategy four-hour-trend --interval 1h --no-plot --journal
+python main.py --scan --strategy four-hour-trend --interval 1h --no-plot --journal
 ```
 
 Purpose:
 
-- primary higher-frequency scan
-- updates daily journal
-- main monthly opportunity engine
+- medium-frequency trend scan
+- broad market profile
+- daily journal update
+- primary trend continuation engine
+---
+ 
+### 3. Daily RSI-Bollinger V2 Scan
+
+Run after market close:
+
+```bash
+python main.py --scan --strategy rsi-bollinger-v2 --no-plot --journal
+```
+
+Purpose:
+
+- tactical mean reversion scan
+- high-beta profile
+- daily journal update
+- higher-frequency tactical setup engine
 
 ## If Scan Shows A Flagged Setup
 
-### 3. EMA-RSI Deep Dive
+Run deep dives only for:
 
-Run only for flagged names (`BUY` or `NEAR_SETUP`):
+- `BUY`
+- `ACTIONABLE`
+- `NEAR_SETUP`
+
+### EMA-RSI Deep Dive
 
 ```bash
 python main.py --ticker TICKER --strategy ema-rsi --save-reports --no-plot
 ```
 
-Example:
-
-```bash
-python main.py --ticker CRM --strategy ema-rsi --save-reports --no-plot
-```
-
-### 4. 4H Deep Dive
-
-Run only for flagged names (`BUY`):
+### 4H Trend Deep Dive
 
 ```bash
 python main.py --ticker TICKER --strategy four-hour-trend --interval 1h --save-reports --no-plot
 ```
 
+### RSI-Bollinger V2 Deep Dive
+
+```bash
+python main.py --ticker TICKER --strategy rsi-bollinger-v2 --save-reports --no-plot
+```
+
 Example:
 
 ```bash
-python main.py --ticker PLTR --strategy four-hour-trend --interval 1h --save-reports --no-plot
+python main.py --ticker NVDA --strategy rsi-bollinger-v2 --save-reports --no-plot
 ```
+
+## Daily Workflow
+
+This process is run once per day after market close. Do not scan intraday unless reviewing an already planned trade.
+
+- Run all 3 scans after market close
+- Review only `BUY` / `ACTIONABLE` / `NEAR_SETUP` names
+- Run deep dives only on flagged names
+- Write next-day trade plan (entry, stop, target, size)
+- Execute only pre-planned trades next session
+- Journal all completed trades
