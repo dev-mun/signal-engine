@@ -1,0 +1,42 @@
+{
+  "default": {
+    "rsi_threshold": 38,
+    "stop_loss": 0.04,
+    "take_profit": 0.05,
+    "trailing_stop": 0.04,
+    "max_hold_days": 7,
+    "volume_multiplier": 0.6,
+    "band_tolerance": 1.02,
+    "close_position_min": 0.35
+  },
+  "NVDA": {
+    "rsi_threshold": 38,
+    "stop_loss": 0.04,
+    "take_profit": 0.04,
+    "trailing_stop": 0.04,
+    "max_hold_days": 10,
+    "volume_multiplier": 0.8,
+    "band_tolerance": 1.02,
+    "close_position_min": 0.35
+  },
+  "AVGO": {
+    "rsi_threshold": 42,
+    "stop_loss": 0.04,
+    "take_profit": 0.06,
+    "trailing_stop": 0.05,
+    "max_hold_days": 5,
+    "volume_multiplier": 0.5,
+    "band_tolerance": 1.01,
+    "close_position_min": 0.35
+  },
+  "META": {
+    "rsi_threshold": 38,
+    "stop_loss": 0.05,
+    "take_profit": 0.06,
+    "trailing_stop": 0.05,
+    "max_hold_days": 10,
+    "volume_multiplier": 0.6,
+    "band_tolerance": 1.03,
+    "close_position_min": 0.30
+  }
+}

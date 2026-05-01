@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 import sys
@@ -14,6 +16,17 @@ from algo_backtester.backtests.four_hour_trend_backtester import (
     make_demo_intraday_data,
     prepare_four_hour_data,
     scan_watchlist as scan_watchlist_four_hour,
+)
+from algo_backtester.backtests.rsi_bollinger_backtester import (
+    RsiBollingerBacktestConfig,
+    RsiBollingerBacktester,
+    scan_watchlist as scan_watchlist_rsi_bollinger,
+)
+from algo_backtester.backtests.rsi_bollinger_v2_backtester import (
+    RsiBollingerV2BacktestConfig,
+    RsiBollingerV2Backtester,
+    resolve_ticker_config,
+    scan_watchlist as scan_watchlist_rsi_bollinger_v2,
 )
 from algo_backtester.config import BacktestConfig
 from algo_backtester.data_loader import load_csv, load_yfinance_data, make_demo_data
@@ -42,6 +55,24 @@ from algo_backtester.reports.four_hour_report import (
     save_reports as save_four_hour_reports,
     save_scan_results as save_four_hour_scan_results,
 )
+from algo_backtester.reports.rsi_bollinger_report import (
+    performance_summary as rsi_bollinger_performance_summary,
+    plot_results as plot_rsi_bollinger_results,
+    print_latest_signal as print_rsi_bollinger_latest_signal,
+    print_scan_results as print_rsi_bollinger_scan_results,
+    print_summary as print_rsi_bollinger_summary,
+    save_reports as save_rsi_bollinger_reports,
+    save_scan_results as save_rsi_bollinger_scan_results,
+)
+from algo_backtester.reports.rsi_bollinger_v2_report import (
+    performance_summary as rsi_bollinger_v2_performance_summary,
+    plot_results as plot_rsi_bollinger_v2_results,
+    print_latest_signal as print_rsi_bollinger_v2_latest_signal,
+    print_scan_results as print_rsi_bollinger_v2_scan_results,
+    print_summary as print_rsi_bollinger_v2_summary,
+    save_reports as save_rsi_bollinger_v2_reports,
+    save_scan_results as save_rsi_bollinger_v2_scan_results,
+)
 from algo_backtester.reporting import print_latest_signal, save_reports
 from algo_backtester.scanner import (
     print_scan_results,
@@ -52,6 +83,11 @@ from algo_backtester.trade_plan import (
     build_signal_interpretation,
     build_trade_plan,
     print_signal_interpretation,
+)
+from algo_backtester.watchlists import (
+    DEFAULT_STRATEGY_PROFILES,
+    WATCHLIST_PROFILES,
+    parse_scan_universe,
 )
 
 
@@ -70,7 +106,7 @@ def parse_args() -> argparse.Namespace:
         "--strategy",
         type=str,
         default="trend-pullback",
-        choices=["trend-pullback", "ema-rsi", "four-hour-trend"],
+        choices=["trend-pullback", "ema-rsi", "four-hour-trend", "rsi-bollinger", "rsi-bollinger-v2"],
     )
     parser.add_argument("--interval", type=str, default="1h")
 
@@ -94,9 +130,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scan",
         type=str,
+        nargs="?",
+        const="",
         default=None,
-        help="Comma-separated tickers to scan, example: SPY,QQQ,NVDA,AAPL,MSFT",
+        help="Optional comma-separated tickers to scan, example: SPY,QQQ,NVDA,AAPL,MSFT",
     )
+    parser.add_argument("--profile", type=str, default=None, choices=sorted(WATCHLIST_PROFILES))
 
     return parser.parse_args()
 
@@ -138,6 +177,38 @@ def _four_hour_config(args: argparse.Namespace) -> FourHourTrendConfig:
     )
 
 
+def _rsi_bollinger_config(args: argparse.Namespace) -> RsiBollingerBacktestConfig:
+    provided_flags = _provided_cli_flags()
+
+    return RsiBollingerBacktestConfig(
+        initial_cash=args.initial_cash,
+        stop_loss=args.stop_loss if "--stop-loss" in provided_flags else 0.05,
+        take_profit=args.take_profit if "--take-profit" in provided_flags else 0.06,
+        trailing_stop=args.trailing_stop if "--trailing-stop" in provided_flags else 0.04,
+        max_hold_days=args.max_hold_days if "--max-hold-days" in provided_flags else 10,
+        risk_per_trade=args.risk_per_trade if "--risk-per-trade" in provided_flags else 0.0075,
+        atr_multiple=args.atr_multiple if "--atr-multiple" in provided_flags else 1.5,
+    )
+
+
+def _rsi_bollinger_v2_config(args: argparse.Namespace) -> RsiBollingerV2BacktestConfig:
+    provided_flags = _provided_cli_flags()
+
+    return RsiBollingerV2BacktestConfig(
+        initial_cash=args.initial_cash,
+        stop_loss=args.stop_loss if "--stop-loss" in provided_flags else 0.04,
+        take_profit=args.take_profit if "--take-profit" in provided_flags else 0.04,
+        trailing_stop=args.trailing_stop if "--trailing-stop" in provided_flags else 0.03,
+        max_hold_days=args.max_hold_days if "--max-hold-days" in provided_flags else 7,
+        risk_per_trade=args.risk_per_trade if "--risk-per-trade" in provided_flags else 0.005,
+        atr_multiple=args.atr_multiple if "--atr-multiple" in provided_flags else 1.25,
+        rsi_threshold=42.0,
+        volume_multiplier=0.6,
+        band_tolerance=1.03,
+        require_confirmation=False,
+    )
+
+
 def _load_four_hour_input_data(args: argparse.Namespace):
     if args.csv:
         label = Path(args.csv).stem
@@ -175,14 +246,181 @@ def load_input_data(args: argparse.Namespace):
     return label, make_demo_data(rows=500)
 
 
+def _parse_explicit_scan_tickers(scan_arg: str | None) -> list[str]:
+    if not scan_arg:
+        return []
+    return [ticker.strip().upper() for ticker in scan_arg.split(",") if ticker.strip()]
+
+
+def _resolve_scan_request(args: argparse.Namespace) -> tuple[list[str], str]:
+    tickers = parse_scan_universe(
+        scan_arg=args.scan,
+        strategy=args.strategy,
+        profile=args.profile,
+    )
+
+    if _parse_explicit_scan_tickers(args.scan):
+        return tickers, "custom (explicit tickers override)"
+
+    if args.profile:
+        return tickers, args.profile
+
+    default_profile = DEFAULT_STRATEGY_PROFILES.get(args.strategy)
+    if default_profile is None:
+        raise ValueError(f"No default watchlist profile configured for strategy '{args.strategy}'.")
+
+    return tickers, default_profile
+
+
+def _print_resolved_watchlist(profile_label: str, tickers: list[str]) -> None:
+    print("\nResolved Watchlist")
+    print("------------------")
+    print(f"Profile: {profile_label}")
+    print(f"Tickers: {', '.join(tickers) if tickers else '(none)'}")
+
+
 def main() -> None:
     args = parse_args()
+
+    if args.strategy == "rsi-bollinger-v2":
+        base_rsi_bollinger_v2_config = _rsi_bollinger_v2_config(args)
+
+        if args.scan is not None:
+            tickers, profile_label = _resolve_scan_request(args)
+            _print_resolved_watchlist(profile_label, tickers)
+            results = scan_watchlist_rsi_bollinger_v2(
+                tickers=tickers,
+                start=args.start,
+                end=args.end,
+                config=base_rsi_bollinger_v2_config,
+            )
+            print_rsi_bollinger_v2_scan_results(results)
+            save_rsi_bollinger_v2_scan_results(results, output_dir=args.output_dir)
+            return
+
+        label, raw_df = load_input_data(args)
+        profile_used, rsi_bollinger_v2_config = resolve_ticker_config(
+            ticker=label,
+            config=base_rsi_bollinger_v2_config,
+        )
+        bt = RsiBollingerV2Backtester(config=rsi_bollinger_v2_config)
+        strategy_df, equity_df, trades_df, signals_df = bt.run(raw_df)
+
+        summary = rsi_bollinger_v2_performance_summary(
+            equity_df=equity_df,
+            trades_df=trades_df,
+            initial_cash=rsi_bollinger_v2_config.initial_cash,
+        )
+        print_rsi_bollinger_v2_summary(summary)
+        print(f"Profile Used: {profile_used}")
+        print_rsi_bollinger_v2_latest_signal(label, signals_df)
+
+        print("\nRecent Trades")
+        print("-------------")
+        if trades_df.empty:
+            print("No trades generated with current rules.")
+        else:
+            print(trades_df.tail(20).to_string(index=False))
+
+        if args.save_reports:
+            save_rsi_bollinger_v2_reports(
+                label=label,
+                equity_df=equity_df,
+                trades_df=trades_df,
+                signals_df=signals_df,
+                output_dir=args.output_dir,
+            )
+
+        if not args.no_plot:
+            try:
+                bh_df = buy_and_hold_curve(
+                    raw_df=raw_df,
+                    equity_index=equity_df.index,
+                    initial_cash=rsi_bollinger_v2_config.initial_cash,
+                )
+                plot_rsi_bollinger_v2_results(
+                    label=label,
+                    price_df=strategy_df,
+                    signals_df=signals_df,
+                    equity_df=equity_df,
+                    bh_df=bh_df,
+                    take_profit_pct=rsi_bollinger_v2_config.take_profit,
+                )
+            except Exception as exc:
+                print(f"Skipping buy-and-hold chart: {exc}")
+
+        return
+
+    if args.strategy == "rsi-bollinger":
+        rsi_bollinger_config = _rsi_bollinger_config(args)
+
+        if args.scan is not None:
+            tickers, profile_label = _resolve_scan_request(args)
+            _print_resolved_watchlist(profile_label, tickers)
+            results = scan_watchlist_rsi_bollinger(
+                tickers=tickers,
+                start=args.start,
+                end=args.end,
+                config=rsi_bollinger_config,
+            )
+            print_rsi_bollinger_scan_results(results)
+            save_rsi_bollinger_scan_results(results, output_dir=args.output_dir)
+            return
+
+        label, raw_df = load_input_data(args)
+        bt = RsiBollingerBacktester(config=rsi_bollinger_config)
+        strategy_df, equity_df, trades_df, signals_df = bt.run(raw_df)
+
+        summary = rsi_bollinger_performance_summary(
+            equity_df=equity_df,
+            trades_df=trades_df,
+            initial_cash=rsi_bollinger_config.initial_cash,
+        )
+        print_rsi_bollinger_summary(summary)
+        print_rsi_bollinger_latest_signal(label, signals_df)
+
+        print("\nRecent Trades")
+        print("-------------")
+        if trades_df.empty:
+            print("No trades generated with current rules.")
+        else:
+            print(trades_df.tail(20).to_string(index=False))
+
+        if args.save_reports:
+            save_rsi_bollinger_reports(
+                label=label,
+                equity_df=equity_df,
+                trades_df=trades_df,
+                signals_df=signals_df,
+                output_dir=args.output_dir,
+            )
+
+        if not args.no_plot:
+            try:
+                bh_df = buy_and_hold_curve(
+                    raw_df=raw_df,
+                    equity_index=equity_df.index,
+                    initial_cash=rsi_bollinger_config.initial_cash,
+                )
+                plot_rsi_bollinger_results(
+                    label=label,
+                    price_df=strategy_df,
+                    signals_df=signals_df,
+                    equity_df=equity_df,
+                    bh_df=bh_df,
+                    take_profit_pct=rsi_bollinger_config.take_profit,
+                )
+            except Exception as exc:
+                print(f"Skipping buy-and-hold chart: {exc}")
+
+        return
 
     if args.strategy == "four-hour-trend":
         four_hour_config = _four_hour_config(args)
 
-        if args.scan:
-            tickers = [t.strip().upper() for t in args.scan.split(",") if t.strip()]
+        if args.scan is not None:
+            tickers, profile_label = _resolve_scan_request(args)
+            _print_resolved_watchlist(profile_label, tickers)
             results = scan_watchlist_four_hour(
                 tickers=tickers,
                 interval=args.interval,
@@ -251,8 +489,9 @@ def main() -> None:
     if args.strategy == "ema-rsi":
         ema_config = _ema_rsi_config(args)
 
-        if args.scan:
-            tickers = [t.strip().upper() for t in args.scan.split(",") if t.strip()]
+        if args.scan is not None:
+            tickers, profile_label = _resolve_scan_request(args)
+            _print_resolved_watchlist(profile_label, tickers)
             results = scan_watchlist_ema_rsi(
                 tickers=tickers,
                 start=args.start,
@@ -329,8 +568,9 @@ def main() -> None:
         earnings_buffer_days=args.earnings_buffer_days,
     )
 
-    if args.scan:
-        tickers = [t.strip().upper() for t in args.scan.split(",") if t.strip()]
+    if args.scan is not None:
+        tickers, profile_label = _resolve_scan_request(args)
+        _print_resolved_watchlist(profile_label, tickers)
         results = scan_watchlist(
             tickers=tickers,
             config=config,
