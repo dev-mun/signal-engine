@@ -50,45 +50,120 @@ Purpose:
 - daily journal update
 - higher-frequency tactical setup engine
 
-## If Scan Shows A Flagged Setup
+---
 
-Run deep dives only for:
+### 4. Daily Swing Options Small-Account Scan
 
-- `BUY`
-- `ACTIONABLE`
-- `NEAR_SETUP`
-
-### EMA-RSI Deep Dive
+Run after market close:
 
 ```bash
-python main.py --ticker TICKER --strategy ema-rsi --save-reports --no-plot
+python main.py --scan --strategy swing-options --profile small_account_options --no-plot --journal
 ```
 
-### 4H Trend Deep Dive
+Purpose:
+
+- focused small-account options universe
+- labels affordable long-call candidates for a $2k to $3k account
+- daily journal update
+
+# Swing Options Daily Workflow
+
+## Daily Small Account Scan (After Market Close)
+
+Run:
 
 ```bash
-python main.py --ticker TICKER --strategy four-hour-trend --interval 1h --save-reports --no-plot
+python main.py --scan --strategy swing-options --profile small_account_options --no-plot --journal
 ```
 
-### RSI-Bollinger V2 Deep Dive
+Purpose:
+
+- daily post-close scan
+- identify small-account eligible long-call setups
+- only review affordable trades for a $2k to $3k account
+
+Review only rows where:
+
+- `Signal = BUY`
+- `SmallAcct = YES`
+- `PremiumStatus = OK` or `ACCEPTABLE`
+
+Ignore:
+
+- `HOLD`
+- `EXTENDED`
+- `AVOID`
+- `TOO_EXPENSIVE`
+
+## If A Valid Candidate Appears (Same Night)
+
+Run ticker deep dive:
 
 ```bash
-python main.py --ticker TICKER --strategy rsi-bollinger-v2 --save-reports --no-plot
+python main.py --ticker TICKER --strategy swing-options --save-reports --no-plot
 ```
 
 Example:
 
 ```bash
-python main.py --ticker NVDA --strategy rsi-bollinger-v2 --save-reports --no-plot
+python main.py --ticker AMD --strategy swing-options --save-reports --no-plot
 ```
 
-## Daily Workflow
+Purpose:
 
-This process is run once per day after market close. Do not scan intraday unless reviewing an already planned trade.
+- inspect full setup
+- inspect score
+- inspect source alignment
+- inspect estimated option structure
+- confirm candidate before next session
 
-- Run all 3 scans after market close
-- Review only `BUY` / `ACTIONABLE` / `NEAR_SETUP` names
-- Run deep dives only on flagged names
-- Write next-day trade plan (entry, stop, target, size)
-- Execute only pre-planned trades next session
-- Journal all completed trades
+## Next Morning Execution Checklist
+
+Only if prior night produced valid candidate.
+
+Before market open:
+
+1. Open Fidelity options chain
+2. Find 30–60 DTE call
+3. Prefer ~45 DTE
+4. Target delta 0.50–0.65
+5. Debit <= $150
+6. Tight bid/ask spread
+7. Skip illiquid chain
+8. Skip if contract no longer fits setup
+
+Execution rules:
+
+- one position at a time
+- one contract only
+- no averaging down
+- no revenge trades
+- skip if setup degrades at open
+
+## Weekly Review (Weekend)
+
+Run:
+
+```bash
+python scripts/backtest_swing_options_proxy.py
+```
+
+Purpose:
+
+- validate signal cadence
+- review move-quality drift
+- ensure BUY cadence remains healthy
+- confirm system behavior has not degraded
+
+Review:
+
+- trades/month
+- % reaching 1R within 5D
+- % reaching 2R within 10D
+- move-quality distribution
+- premium-over-budget frequency
+
+Do not modify strategy from weekly review alone.
+Use weekly review only for monitoring unless paper results confirm execution issues.
+
+This is now the primary workflow.
