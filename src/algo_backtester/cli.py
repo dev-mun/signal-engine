@@ -17,6 +17,20 @@ from algo_backtester.backtests.four_hour_trend_backtester import (
     prepare_four_hour_data,
     scan_watchlist as scan_watchlist_four_hour,
 )
+from algo_backtester.backtests.options_momentum_backtester import (
+    OptionsMomentumConfig,
+    analyze_ticker as analyze_options_momentum_ticker,
+    scan_watchlist as scan_watchlist_options_momentum,
+)
+from algo_backtester.backtests.swing_options_backtester import (
+    SMALL_ACCOUNT_OPTIONS_PROFILE,
+    SwingOptionsConfig,
+    SWING_OPTIONS_ACCOUNT_TIERS,
+    SWING_OPTIONS_PREMIUM_BUDGET_MODES,
+    apply_execution_profile_labels,
+    analyze_ticker as analyze_swing_options_ticker,
+    scan_watchlist as scan_watchlist_swing_options,
+)
 from algo_backtester.backtests.rsi_bollinger_backtester import (
     RsiBollingerBacktestConfig,
     RsiBollingerBacktester,
@@ -54,6 +68,18 @@ from algo_backtester.reports.four_hour_report import (
     print_summary as print_four_hour_summary,
     save_reports as save_four_hour_reports,
     save_scan_results as save_four_hour_scan_results,
+)
+from algo_backtester.reports.options_momentum_report import (
+    print_scan_results as print_options_momentum_scan_results,
+    print_ticker_plan as print_options_momentum_ticker_plan,
+    save_reports as save_options_momentum_reports,
+    save_scan_results as save_options_momentum_scan_results,
+)
+from algo_backtester.reports.swing_options_report import (
+    print_scan_results as print_swing_options_scan_results,
+    print_ticker_plan as print_swing_options_ticker_plan,
+    save_reports as save_swing_options_reports,
+    save_scan_results as save_swing_options_scan_results,
 )
 from algo_backtester.reports.rsi_bollinger_report import (
     performance_summary as rsi_bollinger_performance_summary,
@@ -106,7 +132,7 @@ def parse_args() -> argparse.Namespace:
         "--strategy",
         type=str,
         default="trend-pullback",
-        choices=["trend-pullback", "ema-rsi", "four-hour-trend", "rsi-bollinger", "rsi-bollinger-v2"],
+        choices=["trend-pullback", "ema-rsi", "four-hour-trend", "rsi-bollinger", "rsi-bollinger-v2", "options-momentum", "swing-options"],
     )
     parser.add_argument("--interval", type=str, default="1h")
 
@@ -209,6 +235,35 @@ def _rsi_bollinger_v2_config(args: argparse.Namespace) -> RsiBollingerV2Backtest
     )
 
 
+def _options_momentum_config(args: argparse.Namespace) -> OptionsMomentumConfig:
+    provided_flags = _provided_cli_flags()
+
+    return OptionsMomentumConfig(
+        initial_cash=args.initial_cash,
+        risk_per_trade=args.risk_per_trade if "--risk-per-trade" in provided_flags else 0.015,
+        max_contracts=1,
+        min_dte=14,
+        max_dte=30,
+        interval=args.interval,
+    )
+
+
+def _swing_options_config(args: argparse.Namespace) -> SwingOptionsConfig:
+    provided_flags = _provided_cli_flags()
+
+    return SwingOptionsConfig(
+        initial_cash=args.initial_cash if "--initial-cash" in provided_flags else SWING_OPTIONS_ACCOUNT_TIERS["mid_account"],
+        risk_per_trade=args.risk_per_trade if "--risk-per-trade" in provided_flags else SWING_OPTIONS_PREMIUM_BUDGET_MODES["standard"],
+        max_contracts=1,
+        interval=args.interval,
+        min_dte=30,
+        max_dte=60,
+        preferred_dte=45,
+        time_stop_days=5,
+        max_hold_days=args.max_hold_days if "--max-hold-days" in provided_flags else 15,
+    )
+
+
 def _load_four_hour_input_data(args: argparse.Namespace):
     if args.csv:
         label = Path(args.csv).stem
@@ -281,6 +336,78 @@ def _print_resolved_watchlist(profile_label: str, tickers: list[str]) -> None:
 
 def main() -> None:
     args = parse_args()
+
+    if args.strategy == "swing-options":
+        swing_options_config = _swing_options_config(args)
+
+        if args.scan is not None:
+            tickers, profile_label = _resolve_scan_request(args)
+            _print_resolved_watchlist(profile_label, tickers)
+            results = scan_watchlist_swing_options(
+                tickers=tickers,
+                start=args.start,
+                end=args.end,
+                config=swing_options_config,
+            )
+            account_profile = SMALL_ACCOUNT_OPTIONS_PROFILE if profile_label == SMALL_ACCOUNT_OPTIONS_PROFILE else "standard"
+            results = [apply_execution_profile_labels(result=result, account_profile=account_profile) for result in results]
+            print_swing_options_scan_results(results)
+            save_swing_options_scan_results(results, output_dir=args.output_dir)
+            if args.journal:
+                update_paper_trading_journal(results=results, output_dir=args.output_dir)
+            return
+
+        if not args.ticker:
+            print("swing-options deep dive requires --ticker.")
+            return
+
+        analysis = analyze_swing_options_ticker(
+            ticker=args.ticker.upper(),
+            start=args.start,
+            end=args.end,
+            config=swing_options_config,
+        )
+        print_swing_options_ticker_plan(analysis)
+        if args.save_reports:
+            save_swing_options_reports(analysis=analysis, output_dir=args.output_dir)
+        if args.journal:
+            update_paper_trading_journal(results=[analysis["result"]], output_dir=args.output_dir)
+        return
+
+    if args.strategy == "options-momentum":
+        options_momentum_config = _options_momentum_config(args)
+
+        if args.scan is not None:
+            tickers, profile_label = _resolve_scan_request(args)
+            _print_resolved_watchlist(profile_label, tickers)
+            results = scan_watchlist_options_momentum(
+                tickers=tickers,
+                start=args.start,
+                end=args.end,
+                config=options_momentum_config,
+            )
+            print_options_momentum_scan_results(results)
+            save_options_momentum_scan_results(results, output_dir=args.output_dir)
+            if args.journal:
+                update_paper_trading_journal(results=results, output_dir=args.output_dir)
+            return
+
+        if not args.ticker:
+            print("options-momentum deep dive requires --ticker.")
+            return
+
+        analysis = analyze_options_momentum_ticker(
+            ticker=args.ticker.upper(),
+            start=args.start,
+            end=args.end,
+            config=options_momentum_config,
+        )
+        print_options_momentum_ticker_plan(analysis)
+        if args.save_reports:
+            save_options_momentum_reports(analysis=analysis, output_dir=args.output_dir)
+        if args.journal:
+            update_paper_trading_journal(results=[analysis["result"]], output_dir=args.output_dir)
+        return
 
     if args.strategy == "rsi-bollinger-v2":
         base_rsi_bollinger_v2_config = _rsi_bollinger_v2_config(args)

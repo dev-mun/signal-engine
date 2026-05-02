@@ -8,10 +8,16 @@ import algo_backtester.watchlists as watchlists_module
 def test_builtin_profiles_load():
     broad_market = watchlists_module.get_watchlist("broad_market")
     high_beta = watchlists_module.get_watchlist("high_beta")
+    options_momentum_core = watchlists_module.get_watchlist("options_momentum_core")
+    swing_options_core = watchlists_module.get_watchlist("swing_options_core")
+    small_account_options = watchlists_module.get_watchlist("small_account_options")
     custom = watchlists_module.get_watchlist("custom")
 
     assert broad_market[:6] == ["SPY", "QQQ", "DIA", "IWM", "XLK", "SMH"]
     assert high_beta == ["NVDA", "AVGO", "META", "MSFT", "DIA", "PANW", "TSM", "GOOGL", "SPY"]
+    assert options_momentum_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT"]
+    assert swing_options_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT", "AMD"]
+    assert small_account_options == ["SPY", "QQQ", "AAPL", "AMD"]
     assert custom == []
 
 
@@ -25,6 +31,12 @@ def test_strategy_default_mapping_works():
     assert watchlists_module.get_default_watchlist_for_strategy(
         "rsi-bollinger-v2"
     ) == watchlists_module.get_watchlist("high_beta")
+    assert watchlists_module.get_default_watchlist_for_strategy(
+        "options-momentum"
+    ) == watchlists_module.get_watchlist("options_momentum_core")
+    assert watchlists_module.get_default_watchlist_for_strategy(
+        "swing-options"
+    ) == watchlists_module.get_watchlist("swing_options_core")
 
 
 def test_explicit_tickers_override_profile():

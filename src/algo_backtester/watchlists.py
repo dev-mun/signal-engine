@@ -45,6 +45,31 @@ WATCHLIST_PROFILES = {
         "GOOGL",
         "SPY",
     ],
+    "options_momentum_core": [
+        "SPY",
+        "QQQ",
+        "NVDA",
+        "AVGO",
+        "META",
+        "AAPL",
+        "MSFT",
+    ],
+    "swing_options_core": [
+        "SPY",
+        "QQQ",
+        "NVDA",
+        "AVGO",
+        "META",
+        "AAPL",
+        "MSFT",
+        "AMD",
+    ],
+    "small_account_options": [
+        "SPY",
+        "QQQ",
+        "AAPL",
+        "AMD",
+    ],
     "custom": [],
 }
 
@@ -52,6 +77,8 @@ DEFAULT_STRATEGY_PROFILES = {
     "ema-rsi": "broad_market",
     "four-hour-trend": "broad_market",
     "rsi-bollinger-v2": "high_beta",
+    "options-momentum": "options_momentum_core",
+    "swing-options": "swing_options_core",
 }
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "watchlists.json"
