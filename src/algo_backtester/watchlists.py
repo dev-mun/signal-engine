@@ -70,6 +70,12 @@ WATCHLIST_PROFILES = {
         "AAPL",
         "AMD",
     ],
+    "small_account_debit_spreads": [
+        "SPY",
+        "QQQ",
+        "AAPL",
+        "AMD",
+    ],
     "custom": [],
 }
 
@@ -79,6 +85,7 @@ DEFAULT_STRATEGY_PROFILES = {
     "rsi-bollinger-v2": "high_beta",
     "options-momentum": "options_momentum_core",
     "swing-options": "swing_options_core",
+    "swing-options-debit-spread": "small_account_debit_spreads",
 }
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "watchlists.json"

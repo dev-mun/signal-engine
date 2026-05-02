@@ -11,6 +11,7 @@ def test_builtin_profiles_load():
     options_momentum_core = watchlists_module.get_watchlist("options_momentum_core")
     swing_options_core = watchlists_module.get_watchlist("swing_options_core")
     small_account_options = watchlists_module.get_watchlist("small_account_options")
+    small_account_debit_spreads = watchlists_module.get_watchlist("small_account_debit_spreads")
     custom = watchlists_module.get_watchlist("custom")
 
     assert broad_market[:6] == ["SPY", "QQQ", "DIA", "IWM", "XLK", "SMH"]
@@ -18,6 +19,7 @@ def test_builtin_profiles_load():
     assert options_momentum_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT"]
     assert swing_options_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT", "AMD"]
     assert small_account_options == ["SPY", "QQQ", "AAPL", "AMD"]
+    assert small_account_debit_spreads == ["SPY", "QQQ", "AAPL", "AMD"]
     assert custom == []
 
 
@@ -37,6 +39,9 @@ def test_strategy_default_mapping_works():
     assert watchlists_module.get_default_watchlist_for_strategy(
         "swing-options"
     ) == watchlists_module.get_watchlist("swing_options_core")
+    assert watchlists_module.get_default_watchlist_for_strategy(
+        "swing-options-debit-spread"
+    ) == watchlists_module.get_watchlist("small_account_debit_spreads")
 
 
 def test_explicit_tickers_override_profile():

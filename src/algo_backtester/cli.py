@@ -22,6 +22,11 @@ from algo_backtester.backtests.options_momentum_backtester import (
     analyze_ticker as analyze_options_momentum_ticker,
     scan_watchlist as scan_watchlist_options_momentum,
 )
+from algo_backtester.backtests.swing_options_debit_spread_backtester import (
+    SwingOptionsDebitSpreadConfig,
+    analyze_ticker as analyze_swing_options_debit_spread_ticker,
+    scan_watchlist as scan_watchlist_swing_options_debit_spread,
+)
 from algo_backtester.backtests.swing_options_backtester import (
     SMALL_ACCOUNT_OPTIONS_PROFILE,
     SwingOptionsConfig,
@@ -81,6 +86,12 @@ from algo_backtester.reports.swing_options_report import (
     save_reports as save_swing_options_reports,
     save_scan_results as save_swing_options_scan_results,
 )
+from algo_backtester.reports.swing_options_debit_spread_report import (
+    print_scan_results as print_swing_options_debit_spread_scan_results,
+    print_ticker_plan as print_swing_options_debit_spread_ticker_plan,
+    save_reports as save_swing_options_debit_spread_reports,
+    save_scan_results as save_swing_options_debit_spread_scan_results,
+)
 from algo_backtester.reports.rsi_bollinger_report import (
     performance_summary as rsi_bollinger_performance_summary,
     plot_results as plot_rsi_bollinger_results,
@@ -132,7 +143,16 @@ def parse_args() -> argparse.Namespace:
         "--strategy",
         type=str,
         default="trend-pullback",
-        choices=["trend-pullback", "ema-rsi", "four-hour-trend", "rsi-bollinger", "rsi-bollinger-v2", "options-momentum", "swing-options"],
+        choices=[
+            "trend-pullback",
+            "ema-rsi",
+            "four-hour-trend",
+            "rsi-bollinger",
+            "rsi-bollinger-v2",
+            "options-momentum",
+            "swing-options",
+            "swing-options-debit-spread",
+        ],
     )
     parser.add_argument("--interval", type=str, default="1h")
 
@@ -264,6 +284,24 @@ def _swing_options_config(args: argparse.Namespace) -> SwingOptionsConfig:
     )
 
 
+def _swing_options_debit_spread_config(args: argparse.Namespace) -> SwingOptionsDebitSpreadConfig:
+    provided_flags = _provided_cli_flags()
+
+    return SwingOptionsDebitSpreadConfig(
+        account_size=args.initial_cash if "--initial-cash" in provided_flags else 3_000.0,
+        max_contracts=1,
+        max_debit=150.0,
+        preferred_debit_min=50.0,
+        preferred_debit_max=125.0,
+        min_dte=30,
+        max_dte=60,
+        preferred_dte=45,
+        max_hold_days=args.max_hold_days if "--max-hold-days" in provided_flags else 15,
+        time_stop_days=5,
+        interval=args.interval,
+    )
+
+
 def _load_four_hour_input_data(args: argparse.Namespace):
     if args.csv:
         label = Path(args.csv).stem
@@ -336,6 +374,41 @@ def _print_resolved_watchlist(profile_label: str, tickers: list[str]) -> None:
 
 def main() -> None:
     args = parse_args()
+
+    if args.strategy == "swing-options-debit-spread":
+        debit_spread_config = _swing_options_debit_spread_config(args)
+
+        if args.scan is not None:
+            tickers, profile_label = _resolve_scan_request(args)
+            _print_resolved_watchlist(profile_label, tickers)
+            results = scan_watchlist_swing_options_debit_spread(
+                tickers=tickers,
+                start=args.start,
+                end=args.end,
+                config=debit_spread_config,
+            )
+            print_swing_options_debit_spread_scan_results(results)
+            save_swing_options_debit_spread_scan_results(results, output_dir=args.output_dir)
+            if args.journal:
+                update_paper_trading_journal(results=results, output_dir=args.output_dir)
+            return
+
+        if not args.ticker:
+            print("swing-options-debit-spread deep dive requires --ticker.")
+            return
+
+        analysis = analyze_swing_options_debit_spread_ticker(
+            ticker=args.ticker.upper(),
+            start=args.start,
+            end=args.end,
+            config=debit_spread_config,
+        )
+        print_swing_options_debit_spread_ticker_plan(analysis)
+        if args.save_reports:
+            save_swing_options_debit_spread_reports(analysis=analysis, output_dir=args.output_dir)
+        if args.journal:
+            update_paper_trading_journal(results=[analysis["result"]], output_dir=args.output_dir)
+        return
 
     if args.strategy == "swing-options":
         swing_options_config = _swing_options_config(args)
