@@ -57,13 +57,13 @@ Purpose:
 Run after market close:
 
 ```bash
-python main.py --scan --strategy swing-options --profile small_account_options --no-plot --journal
+python main.py --scan --strategy swing-options-debit-spread --no-plot --journal
 ```
 
 Purpose:
 
-- focused small-account options universe
-- labels affordable long-call candidates for a $2k to $3k account
+- focused small-account debit spread universe
+- identifies affordable bull call debit spread candidates for a $2k to $3k account
 - daily journal update
 
 # Swing Options Daily Workflow
@@ -73,19 +73,20 @@ Purpose:
 Run:
 
 ```bash
-python main.py --scan --strategy swing-options --profile small_account_options --no-plot --journal
+python main.py --scan --strategy swing-options-debit-spread --no-plot --journal
 ```
 
 Purpose:
 
 - daily post-close scan
-- identify small-account eligible long-call setups
+- identify small-account eligible bull call debit spread setups
+- use tuned mode as the live production default
 - only review affordable trades for a $2k to $3k account
 
 Review only rows where:
 
 - `Signal = BUY`
-- `SmallAcct = YES`
+- `SmallAccountEligible = YES`
 - `PremiumStatus = OK` or `ACCEPTABLE`
 
 Ignore:
@@ -94,19 +95,20 @@ Ignore:
 - `EXTENDED`
 - `AVOID`
 - `TOO_EXPENSIVE`
+- `BAD_REWARD_RISK`
 
 ## If A Valid Candidate Appears (Same Night)
 
 Run ticker deep dive:
 
 ```bash
-python main.py --ticker TICKER --strategy swing-options --save-reports --no-plot
+python main.py --ticker TICKER --strategy swing-options-debit-spread --save-reports --no-plot
 ```
 
 Example:
 
 ```bash
-python main.py --ticker AMD --strategy swing-options --save-reports --no-plot
+python main.py --ticker AMD --strategy swing-options-debit-spread --save-reports --no-plot
 ```
 
 Purpose:
@@ -114,7 +116,7 @@ Purpose:
 - inspect full setup
 - inspect score
 - inspect source alignment
-- inspect estimated option structure
+- inspect estimated debit spread structure
 - confirm candidate before next session
 
 ## Next Morning Execution Checklist
@@ -124,18 +126,19 @@ Only if prior night produced valid candidate.
 Before market open:
 
 1. Open Fidelity options chain
-2. Find 30–60 DTE call
-3. Prefer ~45 DTE
-4. Target delta 0.50–0.65
-5. Debit <= $150
-6. Tight bid/ask spread
-7. Skip illiquid chain
-8. Skip if contract no longer fits setup
+2. Find a bull call debit spread
+3. Use 30–60 DTE
+4. Prefer ~45 DTE
+5. Keep total debit <= $150
+6. Keep reward/risk >= 1.5
+7. Tight bid/ask spread
+8. Skip illiquid chain
+9. Skip if live spread no longer fits setup
 
 Execution rules:
 
 - one position at a time
-- one contract only
+- one spread only
 - no averaging down
 - no revenge trades
 - skip if setup degrades at open
@@ -145,25 +148,29 @@ Execution rules:
 Run:
 
 ```bash
-python scripts/backtest_swing_options_proxy.py
+python scripts/backtest_swing_options_debit_spread.py --mode tuned
 ```
 
 Purpose:
 
 - validate signal cadence
 - review move-quality drift
-- ensure BUY cadence remains healthy
+- ensure debit spread BUY cadence remains healthy
 - confirm system behavior has not degraded
 
 Review:
 
 - trades/month
-- % reaching 1R within 5D
-- % reaching 2R within 10D
-- move-quality distribution
-- premium-over-budget frequency
+- win rate proxy
+- average proxy PnL %
+- profit factor proxy
+- max drawdown proxy
+- % failed
+- % suitable+
 
 Do not modify strategy from weekly review alone.
 Use weekly review only for monitoring unless paper results confirm execution issues.
 
-This is now the primary workflow.
+Strict mode is research-only.
+Small-account long-call workflow is deprecated.
+This is now the primary live small-account options workflow.
