@@ -163,18 +163,45 @@ def _journal_fields(result: dict, plan: DebitSpreadPlan | None) -> dict:
     }
 
 
-def _premium_reason(signal: str, plan: DebitSpreadPlan | None) -> str:
-    if signal != "BUY":
-        return "No debit spread plan generated because the underlying swing-options signal is HOLD."
+def _blocker_reason(raw_setup: str, plan: DebitSpreadPlan | None) -> str:
+    if raw_setup == "EXTENDED":
+        return "Blocked because the setup is EXTENDED."
+    if raw_setup == "WEAK_TREND":
+        return "Blocked because the setup is WEAK_TREND."
     if plan is None:
-        return "No debit spread plan could be approximated."
+        return ""
     if plan.premium_status == "TOO_EXPENSIVE":
-        return "Estimated debit exceeds the $150 small-account cap."
+        return "Blocked because estimated debit exceeds the $150 small-account cap."
     if plan.premium_status == "BAD_REWARD_RISK":
-        return "Estimated reward/risk is below the 1.5 minimum."
-    if plan.premium_status == "OK":
-        return "Debit and reward/risk both satisfy the preferred small-account range."
-    return "Debit spread is within the cap and meets the minimum reward/risk threshold."
+        return "Blocked because estimated reward/risk is below the 1.5 minimum."
+    return ""
+
+
+def _reason_text(
+    *,
+    signal: str,
+    plan: DebitSpreadPlan | None,
+    conversion_reason: str,
+    raw_setup: str,
+) -> str:
+    if plan is None:
+        return "No debit spread plan generated because the underlying swing-options signal remained non-actionable."
+
+    if conversion_reason == "STRICT_BUY":
+        return "Debit spread plan generated from confirmed swing-options BUY signal."
+
+    if conversion_reason in {"TUNED_WATCHLIST_BUY"} or conversion_reason.startswith("TUNED_NEAR_ACTIONABLE_"):
+        return (
+            "Base swing-options signal was HOLD. Tuned debit-spread conversion upgraded this setup "
+            "to BUY due to near-actionable bullish source alignment."
+        )
+
+    if signal != "BUY":
+        blocker = _blocker_reason(raw_setup=raw_setup, plan=plan)
+        base = "No debit spread plan generated because the underlying swing-options signal remained non-actionable."
+        return f"{base} {blocker}".strip()
+
+    return "Debit spread plan generated from confirmed swing-options BUY signal."
 
 
 def _build_result_from_underlying(
@@ -190,8 +217,9 @@ def _build_result_from_underlying(
     prev_close: float,
 ) -> dict:
     underlying_signal = str(underlying_result["Signal"])
+    raw_setup = str(underlying_result["Setup"])
     signal, final_setup, conversion_reason = _resolve_debit_spread_signal(
-        raw_setup=str(underlying_result["Setup"]),
+        raw_setup=raw_setup,
         strict_signal=underlying_signal,
         score=float(underlying_result["Score"]),
         plan=plan,
@@ -204,14 +232,13 @@ def _build_result_from_underlying(
     )
     eligible = plan is not None and plan.small_account_eligible and signal == "BUY"
     premium_status = "N/A" if plan is None else plan.premium_status
-    reason = _premium_reason(signal=underlying_signal, plan=plan)
+    reason = _reason_text(
+        signal=signal,
+        plan=plan,
+        conversion_reason=conversion_reason,
+        raw_setup=raw_setup,
+    )
     option_reason = DEBIT_SPREAD_PLANNER_DISCLAIMER if plan is None else plan.notes
-    if conversion_reason == "TUNED_WATCHLIST_BUY":
-        reason = f"{reason} Tuned conversion: high-quality WATCHLIST candidate."
-    elif conversion_reason.startswith("TUNED_NEAR_ACTIONABLE_"):
-        reason = f"{reason} Tuned conversion: near-actionable bullish source alignment."
-    elif conversion_reason == "HARD_BLOCKER":
-        reason = f"{reason} Hard blocker preserved."
 
     result = {
         "Ticker": ticker,

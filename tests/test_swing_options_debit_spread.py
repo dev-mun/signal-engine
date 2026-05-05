@@ -81,6 +81,7 @@ def test_scan_runs_for_buy_candidate(monkeypatch):
     assert result["Strategy"] == "swing-options-debit-spread"
     assert result["PremiumStatus"] in {"OK", "ACCEPTABLE", "TOO_EXPENSIVE", "BAD_REWARD_RISK"}
     assert result["OptionStructure"].startswith("Bull Call Debit Spread")
+    assert result["Reason"] == "Debit spread plan generated from confirmed swing-options BUY signal."
 
 
 def test_hold_candidate_has_no_option_plan(monkeypatch):
@@ -102,6 +103,7 @@ def test_hold_candidate_has_no_option_plan(monkeypatch):
     assert result["Signal"] == "HOLD"
     assert result["PremiumStatus"] in {"N/A", "OK", "ACCEPTABLE"}
     assert result["SmallAccountEligible"] == "NO"
+    assert "remained non-actionable" in result["Reason"]
 
 
 def test_debit_spread_report_output(tmp_path: Path, monkeypatch, capsys):
@@ -170,3 +172,35 @@ def test_tuned_watchlist_candidate_converts_to_buy():
     assert signal == "BUY"
     assert setup == "WATCHLIST"
     assert reason == "TUNED_WATCHLIST_BUY"
+
+
+def test_tuned_conversion_reason_text():
+    plan = build_bull_call_debit_spread(ticker="AMD", price=110.0, atr=3.0, signal_date="2026-05-01", score=72.0)
+
+    reason = spread_module._reason_text(
+        signal="BUY",
+        plan=plan,
+        conversion_reason="TUNED_NEAR_ACTIONABLE_2_SOURCES",
+        raw_setup="WATCHLIST",
+    )
+
+    assert reason == (
+        "Base swing-options signal was HOLD. Tuned debit-spread conversion upgraded this setup "
+        "to BUY due to near-actionable bullish source alignment."
+    )
+
+
+def test_blocked_reason_text_appends_blocker():
+    plan = build_bull_call_debit_spread(ticker="AMD", price=110.0, atr=3.0, signal_date="2026-05-01", score=72.0)
+
+    reason = spread_module._reason_text(
+        signal="HOLD",
+        plan=plan,
+        conversion_reason="HARD_BLOCKER",
+        raw_setup="EXTENDED",
+    )
+
+    assert reason == (
+        "No debit spread plan generated because the underlying swing-options signal remained non-actionable. "
+        "Blocked because the setup is EXTENDED."
+    )
