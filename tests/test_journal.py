@@ -43,6 +43,13 @@ def test_update_paper_trading_journal_creates_workbook_and_dedupes_rows(tmp_path
             "TakeProfit": 252.6,
             "RiskPerShare": 16.84,
             "RewardPerShare": 42.1,
+            "LiveDebit": 5.45,
+            "LiveMaxLoss": 545.0,
+            "LiveMaxProfit": 955.0,
+            "LiveRewardRisk": 1.75,
+            "LiveChainConfirmed": "YES",
+            "PlannerMismatch": "YES",
+            "SkipReason": "",
         },
         {
             "Ticker": "MSFT",
@@ -91,6 +98,9 @@ def test_update_paper_trading_journal_creates_workbook_and_dedupes_rows(tmp_path
     assert len(trade_df) == 1
     assert trade_df.iloc[0]["Trade ID"] == "2026-04-25-AAPL-BUY"
     assert trade_df.iloc[0]["Options Structure"] == "Call Debit Spread"
+    assert float(trade_df.iloc[0]["LiveDebit"]) == 5.45
+    assert trade_df.iloc[0]["LiveChainConfirmed"] == "YES"
+    assert trade_df.iloc[0]["PlannerMismatch"] == "YES"
     assert pd.isna(trade_df.iloc[0]["Actual Entry"])
 
 

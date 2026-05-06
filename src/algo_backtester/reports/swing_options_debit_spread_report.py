@@ -33,12 +33,13 @@ def print_scan_results(results: list[dict]) -> None:
         f'{"MaxLoss":>10} '
         f'{"MaxProfit":>10} '
         f'{"RewardRisk":>12} '
+        f'{"Approx":<8} '
         f'{"Width":>8} '
         f'{"PremiumStatus":<16} '
         f'{"SmallAcct":<10} '
         f"Reason"
     )
-    print("-" * 270)
+    print("-" * 280)
 
     for result in results:
         if result["Signal"] == "ERROR":
@@ -58,6 +59,7 @@ def print_scan_results(results: list[dict]) -> None:
             f'{result["MaxLoss"]:>10.2f} '
             f'{result["MaxProfit"]:>10.2f} '
             f'{result["RewardRisk"]:>12.2f} '
+            f'{result["ApproximationConfidence"]:<8} '
             f'{result["SpreadWidth"]:>8.2f} '
             f'{result["PremiumStatus"]:<16} '
             f'{result["SmallAccountEligible"]:<10} '
@@ -119,10 +121,15 @@ def print_ticker_plan(analysis: dict) -> None:
     print(f"Long Strike: {result['LongStrike']:.2f}")
     print(f"Short Strike: {result['ShortStrike']:.2f}")
     print(f"DTE: {result['DTE']}")
+    print(f"Estimated Long Call Ask: {result['EstLongCallAsk']:.2f}")
+    print(f"Estimated Short Call Bid: {result['EstShortCallBid']:.2f}")
     print(f"Estimated Debit: {result['EstDebit']:.2f}")
     print(f"Max Loss: {result['MaxLoss']:.2f}")
     print(f"Max Profit: {result['MaxProfit']:.2f}")
     print(f"Reward/Risk: {result['RewardRisk']:.2f}")
+    print(f"Approximation Confidence: {result['ApproximationConfidence']}")
+    if result["ApproximationWarning"]:
+        print(f"Approximation Warning: {result['ApproximationWarning']}")
     print(f"Premium Status: {result['PremiumStatus']}")
     print(f"Small Account Eligible: {result['SmallAccountEligible']}")
     print(f"Reason: {result['Reason']}")

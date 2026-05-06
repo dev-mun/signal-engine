@@ -96,6 +96,8 @@ def test_build_daily_summary_identifies_debit_spread_setup():
     assert any(row["ticker"] == "SPY" for row in summary["ignore_list"])
     assert summary["debit_spread_context"] is not None
     assert summary["no_trade_reason"] is None
+    assert summary["paper_execution_checklist"]
+    assert "Planner output is not an executable order. It is only a candidate generator." in summary["manual_chain_confirmation_rules"]
 
 
 def test_no_trade_reason_only_when_no_actionable():
@@ -127,6 +129,9 @@ def test_render_and_save_daily_summary(tmp_path: Path):
     assert "## Small Account Options" in markdown
     assert "AAPL | Bull Call Debit Spread 210/220" in markdown
     assert "## Debit Spread Historical Context" in markdown
+    assert "## Manual Live Chain Confirmation Required" in markdown
+    assert "Planner output is not an executable order. It is only a candidate generator." in markdown
+    assert "## Paper Execution Checklist" in markdown
     assert "PROXY VALIDATION ONLY" in markdown
 
     paths = save_daily_summary(summary=summary, output_dir=str(tmp_path))

@@ -69,6 +69,13 @@ TRADE_JOURNAL_COLUMNS = [
     "Max Adverse Excursion",
     "Followed Rules",
     "Trader Notes",
+    "LiveDebit",
+    "LiveMaxLoss",
+    "LiveMaxProfit",
+    "LiveRewardRisk",
+    "LiveChainConfirmed",
+    "PlannerMismatch",
+    "SkipReason",
 ]
 
 
@@ -238,6 +245,13 @@ def _build_trade_journal_rows(results: list[dict]) -> pd.DataFrame:
                 "Max Adverse Excursion": "",
                 "Followed Rules": "",
                 "Trader Notes": "",
+                "LiveDebit": _safe_value(result.get("LiveDebit", "")),
+                "LiveMaxLoss": _safe_value(result.get("LiveMaxLoss", "")),
+                "LiveMaxProfit": _safe_value(result.get("LiveMaxProfit", "")),
+                "LiveRewardRisk": _safe_value(result.get("LiveRewardRisk", "")),
+                "LiveChainConfirmed": _safe_value(result.get("LiveChainConfirmed", "")),
+                "PlannerMismatch": _safe_value(result.get("PlannerMismatch", "")),
+                "SkipReason": _safe_value(result.get("SkipReason", "")),
             }
         )
 

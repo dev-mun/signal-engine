@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 
 import pandas as pd
 
@@ -54,6 +55,26 @@ def _underlying_hold_result() -> dict:
     return payload
 
 
+def _affordable_plan(ticker: str = "AMD"):
+    base_plan = build_bull_call_debit_spread(
+        ticker=ticker,
+        price=110.0 if ticker == "AMD" else 284.18,
+        atr=3.0 if ticker == "AMD" else 6.5,
+        signal_date="2026-05-01",
+        score=82.0,
+    )
+    return replace(
+        base_plan,
+        est_debit=1.1,
+        max_loss=110.0,
+        max_profit=240.0,
+        reward_risk=2.18,
+        premium_status="OK",
+        small_account_eligible=True,
+        notes=f"{base_plan.notes} Test affordable override.",
+    )
+
+
 def test_debit_spread_watchlist_profile_loads():
     assert get_watchlist("small_account_debit_spreads") == ["SPY", "QQQ", "AAPL", "AMD"]
     assert get_default_watchlist_for_strategy("swing-options-debit-spread") == get_watchlist("small_account_debit_spreads")
@@ -70,17 +91,39 @@ def test_build_debit_spread_plan():
 
     assert plan.option_structure.startswith("Bull Call Debit Spread")
     assert 30 <= plan.dte <= 60
+    assert plan.est_long_call_ask > 0
+    assert plan.est_short_call_bid > 0
     assert plan.est_debit > 0
     assert plan.max_loss == round(plan.est_debit * 100, 2)
+    assert plan.approximation_confidence in {"LOW", "MEDIUM", "HIGH"}
+
+
+def test_pricing_approximation_is_directionally_realistic_for_aapl():
+    plan = build_bull_call_debit_spread(
+        ticker="AAPL",
+        price=284.18,
+        atr=6.5,
+        signal_date="2026-05-05",
+        score=82.0,
+    )
+
+    assert plan.long_strike == 285.0
+    assert plan.short_strike in {295.0, 300.0}
+    assert plan.est_long_call_ask >= 7.0
+    assert plan.est_short_call_bid >= 1.75
+    assert 4.5 <= plan.est_debit <= 6.25
+    assert plan.max_loss >= 450.0
 
 
 def test_scan_runs_for_buy_candidate(monkeypatch):
     monkeypatch.setattr(spread_module, "analyze_swing_options_ticker", lambda **kwargs: _underlying_buy_result())
+    monkeypatch.setattr(spread_module, "build_bull_call_debit_spread", lambda **kwargs: _affordable_plan("AMD"))
     result = spread_module.scan_ticker("AMD")
 
     assert result["Strategy"] == "swing-options-debit-spread"
     assert result["PremiumStatus"] in {"OK", "ACCEPTABLE", "TOO_EXPENSIVE", "BAD_REWARD_RISK"}
     assert result["OptionStructure"].startswith("Bull Call Debit Spread")
+    assert result["ApproximationConfidence"] in {"LOW", "MEDIUM", "HIGH"}
     assert result["Reason"] == "Debit spread plan generated from confirmed swing-options BUY signal."
 
 
@@ -101,13 +144,14 @@ def test_hold_candidate_has_no_option_plan(monkeypatch):
     result = spread_module.scan_ticker("AMD")
 
     assert result["Signal"] == "HOLD"
-    assert result["PremiumStatus"] in {"N/A", "OK", "ACCEPTABLE"}
+    assert result["PremiumStatus"] in {"N/A", "OK", "ACCEPTABLE", "TOO_EXPENSIVE"}
     assert result["SmallAccountEligible"] == "NO"
     assert "remained non-actionable" in result["Reason"]
 
 
 def test_debit_spread_report_output(tmp_path: Path, monkeypatch, capsys):
     monkeypatch.setattr(spread_module, "analyze_swing_options_ticker", lambda **kwargs: _underlying_buy_result())
+    monkeypatch.setattr(spread_module, "build_bull_call_debit_spread", lambda **kwargs: _affordable_plan("AMD"))
     analysis = spread_module.analyze_ticker("AMD")
 
     print_ticker_plan(analysis)
@@ -116,6 +160,7 @@ def test_debit_spread_report_output(tmp_path: Path, monkeypatch, capsys):
 
     captured = capsys.readouterr()
     assert "PROXY DEBIT SPREAD VALIDATION ONLY" in captured.out
+    assert "Approximation Confidence:" in captured.out
     assert (tmp_path / "swing_options_debit_spread" / "AMD_options_plan.csv").exists()
     assert (tmp_path / "swing_options_debit_spread" / "AMD_source_signals.csv").exists()
 
@@ -154,7 +199,7 @@ def test_tuned_watchlist_candidate_converts_to_buy():
         spread_module.SwingSourceSignal("four-hour-trend", "HOLD", "NEEDS_PULLBACK", 110.0, 55.0, 3.0, True, True, True, True, "x"),
         spread_module.SwingSourceSignal("rsi-bollinger-v2", "HOLD", "WAIT", 110.0, 52.0, 3.0, True, True, True, False, "x"),
     ]
-    plan = build_bull_call_debit_spread(ticker="AMD", price=110.0, atr=3.0, signal_date="2026-05-01", score=72.0)
+    plan = _affordable_plan("AMD")
 
     signal, setup, reason = spread_module._resolve_debit_spread_signal(
         raw_setup="WATCHLIST",

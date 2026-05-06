@@ -17,6 +17,21 @@ DEBIT_SPREAD_PROXY_CONTEXT = {
     "max_drawdown_proxy": -226.0,
     "label": "PROXY VALIDATION ONLY",
 }
+MANUAL_CHAIN_CONFIRMATION_RULES = [
+    "Before any paper or live trade, manually confirm the spread in Fidelity.",
+    "Match the same ticker.",
+    "Use the same expiration range, with 30-45 DTE preferred.",
+    "Use the same long/short strikes or the closest liquid equivalent.",
+    "Confirm the actual debit.",
+    "Confirm the actual max loss.",
+    "Confirm the actual max profit.",
+    "Confirm the bid/ask spread.",
+    "Confirm volume and open interest.",
+    "Confirm reward/risk is at least 1.5.",
+    "Confirm total debit stays within the account cap.",
+    "Planner output is not an executable order. It is only a candidate generator.",
+    "If the real debit differs materially from the estimate, use real broker pricing and either skip the trade or record it as planner mismatch.",
+]
 
 
 def _format_debit_spread_structure(structure: str) -> str:
@@ -253,6 +268,21 @@ def _no_trade_reason(actionable_count: int) -> str | None:
     )
 
 
+def _paper_execution_checklist(actionable_count: int) -> list[str]:
+    if actionable_count <= 0:
+        return []
+    return [
+        "Open Fidelity chain.",
+        "Select 30-45 DTE.",
+        "Build the same spread.",
+        "Confirm debit is within the account cap.",
+        "Confirm reward/risk is at least 1.5.",
+        "Confirm liquidity.",
+        "Confirm the setup is still valid.",
+        "Paper trade only if all checks pass.",
+    ]
+
+
 def _ignore_rows(scan_payload: dict[str, dict]) -> list[dict]:
     rows: list[dict] = []
     for strategy_payload in scan_payload.values():
@@ -374,6 +404,7 @@ def build_daily_summary(scan_payload: dict[str, dict], report_date: str, failure
     workflow_failures = failures or []
     no_trade_reason = _no_trade_reason(len(actionable))
     debit_spread_context = DEBIT_SPREAD_PROXY_CONTEXT if small_account_options else None
+    paper_execution_checklist = _paper_execution_checklist(len(actionable))
 
     return {
         "report_date": report_date,
@@ -388,6 +419,8 @@ def build_daily_summary(scan_payload: dict[str, dict], report_date: str, failure
         "ignore_list": ignore,
         "no_trade_reason": no_trade_reason,
         "tomorrow_plan": tomorrow_plan,
+        "manual_chain_confirmation_rules": MANUAL_CHAIN_CONFIRMATION_RULES,
+        "paper_execution_checklist": paper_execution_checklist,
         "risk_notes": [
             "No forcing trades.",
             "No trade unless the signal remains valid at the open.",
@@ -484,6 +517,10 @@ def render_daily_summary_markdown(summary: dict) -> str:
             ]
         )
 
+    lines.extend(["", "## Manual Live Chain Confirmation Required"])
+    for row in summary["manual_chain_confirmation_rules"]:
+        lines.append(f"- {row}")
+
     lines.extend(["", "## Watchlist Names"])
     if not summary["watchlist_names"]:
         lines.append("No near-setup watchlist names.")
@@ -507,6 +544,11 @@ def render_daily_summary_markdown(summary: dict) -> str:
 
     if summary.get("no_trade_reason"):
         lines.extend(["", "## No-Trade Reason", summary["no_trade_reason"]])
+
+    if summary.get("paper_execution_checklist"):
+        lines.extend(["", "## Paper Execution Checklist"])
+        for row in summary["paper_execution_checklist"]:
+            lines.append(f"- {row}")
 
     lines.extend(["", "## Tomorrow Plan"])
     for row in summary["tomorrow_plan"]:

@@ -115,6 +115,7 @@ Purpose:
 - identify small-account eligible bull call debit spread setups
 - use tuned mode as the live production default
 - only review affordable trades for a $2k to $3k account
+- planner output is a candidate generator, not an executable order
 
 Review only rows where:
 
@@ -151,6 +152,30 @@ Purpose:
 - inspect source alignment
 - inspect estimated debit spread structure
 - confirm candidate before next session
+- prepare for manual live-chain confirmation, not direct execution
+
+## Manual Live Chain Confirmation Required
+
+Before any paper or live trade, manually confirm the spread in Fidelity:
+
+- same ticker
+- same expiration range, 30-45 DTE preferred
+- same long/short strikes or closest liquid equivalent
+- actual debit
+- actual max loss
+- actual max profit
+- bid/ask spread
+- volume/open interest
+- reward/risk >= 1.5
+- total debit within account cap
+
+Rules:
+
+- planner output is not an executable order
+- it is only a candidate generator
+- if real debit differs materially from estimated debit, use real broker pricing
+- skip the trade if the real structure no longer fits the plan
+- otherwise record it as `planner mismatch`
 
 ## Next Morning Execution Checklist
 
@@ -160,8 +185,8 @@ Before market open:
 
 1. Open Fidelity options chain
 2. Find a bull call debit spread
-3. Use 30–60 DTE
-4. Prefer ~45 DTE
+3. Use 30-60 DTE
+4. Prefer 30-45 DTE
 5. Keep total debit <= $150
 6. Keep reward/risk >= 1.5
 7. Tight bid/ask spread
