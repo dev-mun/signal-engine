@@ -12,6 +12,7 @@ def test_builtin_profiles_load():
     swing_options_core = watchlists_module.get_watchlist("swing_options_core")
     small_account_options = watchlists_module.get_watchlist("small_account_options")
     small_account_debit_spreads = watchlists_module.get_watchlist("small_account_debit_spreads")
+    small_account_growth = watchlists_module.get_watchlist("small_account_growth")
     custom = watchlists_module.get_watchlist("custom")
 
     assert broad_market[:6] == ["SPY", "QQQ", "DIA", "IWM", "XLK", "SMH"]
@@ -20,6 +21,7 @@ def test_builtin_profiles_load():
     assert swing_options_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT", "AMD"]
     assert small_account_options == ["SPY", "QQQ", "AAPL", "AMD"]
     assert small_account_debit_spreads == ["SPY", "QQQ", "AAPL", "AMD"]
+    assert small_account_growth == ["PLTR", "UBER", "SOFI", "HOOD", "PYPL", "RIVN", "DKNG", "AFRM", "HIMS", "CLSK", "IONQ", "TOST", "SNAP", "SHOP", "AMD"]
     assert custom == []
 
 
@@ -87,6 +89,7 @@ def test_custom_config_file_merge_works(tmp_path, monkeypatch):
 def test_missing_config_file_falls_back_cleanly(tmp_path, monkeypatch):
     config_path = tmp_path / "config" / "watchlists.json"
     monkeypatch.setattr(watchlists_module, "DEFAULT_CONFIG_PATH", config_path)
+    monkeypatch.setattr(watchlists_module, "DEFAULT_PROFILE_DIR", tmp_path / "profiles")
 
     assert watchlists_module.get_watchlist("custom") == []
     assert watchlists_module.get_watchlist("high_beta") == [
@@ -100,6 +103,16 @@ def test_missing_config_file_falls_back_cleanly(tmp_path, monkeypatch):
         "GOOGL",
         "SPY",
     ]
+
+
+def test_profile_directory_override_works(tmp_path, monkeypatch):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+    profile_path = profile_dir / "small_account_growth.json"
+    profile_path.write_text(json.dumps(["PLTR", "UBER", "SHOP", "PLTR"]), encoding="utf-8")
+    monkeypatch.setattr(watchlists_module, "DEFAULT_PROFILE_DIR", profile_dir)
+
+    assert watchlists_module.get_watchlist("small_account_growth") == ["PLTR", "UBER", "SHOP"]
 
 
 def test_invalid_profile_raises_clear_error():

@@ -27,7 +27,23 @@ def test_parse_strategies_rejects_invalid():
 
 def test_top_setup_prefers_small_account_debit_spread():
     scan_payload = {
-        "swing-options-debit-spread": {
+        "swing-options-debit-spread:small_account_debit_spreads": {
+            "strategy": "swing-options-debit-spread",
+            "profile": "small_account_debit_spreads",
+            "results": [
+                {
+                    "Ticker": "QQQ",
+                    "Signal": "BUY",
+                    "SmallAccountEligible": "YES",
+                    "OptionStructure": "Bull Call Debit Spread 500/515",
+                    "MaxLoss": 110.0,
+                    "PremiumStatus": "OK",
+                }
+            ]
+        },
+        "swing-options-debit-spread:small_account_growth": {
+            "strategy": "swing-options-debit-spread",
+            "profile": "small_account_growth",
             "results": [
                 {
                     "Ticker": "AAPL",
@@ -40,11 +56,12 @@ def test_top_setup_prefers_small_account_debit_spread():
             ]
         },
         "four-hour-trend": {
+            "strategy": "four-hour-trend",
             "results": [
                 {"Ticker": "PLTR", "Signal": "SHORT_SETUP", "Setup": "ACTIONABLE", "Price": 135.75}
             ]
         },
-        "ema-rsi": {"results": []},
+        "ema-rsi": {"strategy": "ema-rsi", "results": []},
     }
 
     top_setup = run_daily_workflow._top_setup_line(scan_payload)
@@ -77,14 +94,25 @@ def test_summary_only_fails_when_reports_missing(tmp_path: Path):
 
 
 def test_skip_strategy_on_error_continues(monkeypatch):
-    def _broken_scan(strategy: str, output_dir: str) -> dict:
+    def _broken_scan(strategy: str, output_dir: str, report_date: str, profile: str | None = None) -> dict:
         if strategy == "ema-rsi":
             raise RuntimeError("scan failed")
         return {
-            "strategy": strategy,
-            "profile": "test",
-            "tickers": ["AAPL"],
-            "results": [{"Ticker": "AAPL", "Strategy": strategy, "Signal": "HOLD", "Setup": "WAIT", "Price": 1.0, "Reason": "x"}],
+            f"{strategy}:{profile}": {
+                "strategy": strategy,
+                "profile": profile,
+                "tickers": ["AAPL"] if profile == "small_account_debit_spreads" else ["PLTR"],
+                "results": [
+                    {
+                        "Ticker": "AAPL" if profile == "small_account_debit_spreads" else "PLTR",
+                        "Strategy": strategy,
+                        "Signal": "HOLD",
+                        "Setup": "WAIT",
+                        "Price": 1.0,
+                        "Reason": "x",
+                    }
+                ],
+            },
         }
 
     monkeypatch.setattr(run_daily_workflow, "_scan_strategy", _broken_scan)
@@ -98,5 +126,6 @@ def test_skip_strategy_on_error_continues(monkeypatch):
         skip_strategy_on_error=True,
     )
 
-    assert "swing-options-debit-spread" in scan_payload
+    assert "swing-options-debit-spread:small_account_debit_spreads" in scan_payload
+    assert "swing-options-debit-spread:small_account_growth" in scan_payload
     assert failures == [{"strategy": "ema-rsi", "error": "scan failed"}]

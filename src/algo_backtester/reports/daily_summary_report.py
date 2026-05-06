@@ -17,6 +17,8 @@ DEBIT_SPREAD_PROXY_CONTEXT = {
     "max_drawdown_proxy": -226.0,
     "label": "PROXY VALIDATION ONLY",
 }
+LARGE_CAP_DEBIT_PROFILE = "small_account_debit_spreads"
+GROWTH_DEBIT_PROFILE = "small_account_growth"
 MANUAL_CHAIN_CONFIRMATION_RULES = [
     "Before any paper or live trade, manually confirm the spread in Fidelity.",
     "Match the same ticker.",
@@ -74,13 +76,44 @@ def _conviction_label(result: dict) -> str:
     return "Tactical"
 
 
+def _debit_profile_results(scan_payload: dict[str, dict], profile_name: str) -> list[dict]:
+    rows: list[dict] = []
+    for strategy_payload in scan_payload.values():
+        if str(strategy_payload.get("strategy", "")) != "swing-options-debit-spread":
+            continue
+        if str(strategy_payload.get("profile", "")) != profile_name:
+            continue
+        rows.extend(strategy_payload.get("results", []))
+    return rows
+
+
 def select_top_setup(scan_payload: dict[str, dict]) -> dict | None:
-    spread_results = scan_payload.get("swing-options-debit-spread", {}).get("results", [])
-    for result in spread_results:
+    for result in _debit_profile_results(scan_payload, GROWTH_DEBIT_PROFILE):
         if result.get("Signal") == "BUY" and str(result.get("SmallAccountEligible", "NO")) == "YES":
             return {
                 "ticker": str(result["Ticker"]),
                 "strategy": "swing-options-debit-spread",
+                "profile": GROWTH_DEBIT_PROFILE,
+                "signal": "BUY",
+                "structure": f"{_format_debit_spread_structure(str(result.get('OptionStructure', 'N/A')))} Bull Call Debit Spread",
+                "display": (
+                    f"{result['Ticker']} | swing-options-debit-spread | BUY | "
+                    f"{_format_debit_spread_structure(str(result.get('OptionStructure', 'N/A')))} debit spread | "
+                    f"Max Risk ${float(result.get('MaxLoss', 0.0) or 0.0):.0f}"
+                ),
+                "max_risk": float(result.get("MaxLoss", 0.0) or 0.0),
+                "reward_risk": float(result.get("RewardRisk", 0.0) or 0.0),
+                "status": "Small-account eligible",
+                "conviction": _conviction_label(result),
+                "reason": str(result.get("Reason", "")),
+            }
+
+    for result in _debit_profile_results(scan_payload, LARGE_CAP_DEBIT_PROFILE):
+        if result.get("Signal") == "BUY" and str(result.get("SmallAccountEligible", "NO")) == "YES":
+            return {
+                "ticker": str(result["Ticker"]),
+                "strategy": "swing-options-debit-spread",
+                "profile": LARGE_CAP_DEBIT_PROFILE,
                 "signal": "BUY",
                 "structure": f"{_format_debit_spread_structure(str(result.get('OptionStructure', 'N/A')))} Bull Call Debit Spread",
                 "display": (
@@ -180,17 +213,14 @@ def _actionable_signal_rows(scan_payload: dict[str, dict]) -> list[dict]:
 
 
 def _small_account_options_rows(scan_payload: dict[str, dict]) -> list[dict]:
-    strategy_payload = scan_payload.get("swing-options-debit-spread")
-    if strategy_payload is None:
-        return []
-
     rows: list[dict] = []
-    for result in strategy_payload["results"]:
+    for result in _debit_profile_results(scan_payload, GROWTH_DEBIT_PROFILE):
         if result.get("Signal") != "BUY":
             continue
         rows.append(
             {
                 "ticker": str(result.get("Ticker", "")),
+                "profile": GROWTH_DEBIT_PROFILE,
                 "setup": str(result.get("Setup", "")),
                 "spread_structure": str(result.get("OptionStructure", "N/A")),
                 "debit": float(result.get("EstDebit", 0.0) or 0.0),
@@ -203,7 +233,32 @@ def _small_account_options_rows(scan_payload: dict[str, dict]) -> list[dict]:
     return rows
 
 
-def _watchlist_rows(scan_payload: dict[str, dict]) -> list[dict]:
+def _large_cap_debit_rows(scan_payload: dict[str, dict]) -> list[dict]:
+    rows: list[dict] = []
+    for result in _debit_profile_results(scan_payload, LARGE_CAP_DEBIT_PROFILE):
+        if result.get("Signal") != "BUY":
+            continue
+        rows.append(
+            {
+                "ticker": str(result.get("Ticker", "")),
+                "profile": LARGE_CAP_DEBIT_PROFILE,
+                "setup": str(result.get("Setup", "")),
+                "spread_structure": str(result.get("OptionStructure", "N/A")),
+                "debit": float(result.get("EstDebit", 0.0) or 0.0),
+                "max_loss": float(result.get("MaxLoss", 0.0) or 0.0),
+                "reward_risk": float(result.get("RewardRisk", 0.0) or 0.0),
+                "small_account_eligible": str(result.get("SmallAccountEligible", "NO")),
+                "reason": str(result.get("Reason", "")),
+            }
+        )
+    return rows
+
+
+def _ignore_key(result: dict) -> tuple[str, str]:
+    return (str(result.get("Ticker", "")), str(result.get("Strategy", "")))
+
+
+def _watchlist_rows(scan_payload: dict[str, dict], ignore_pairs: set[tuple[str, str]]) -> list[dict]:
     rows: list[dict] = []
     for strategy_payload in scan_payload.values():
         for result in strategy_payload["results"]:
@@ -211,8 +266,13 @@ def _watchlist_rows(scan_payload: dict[str, dict]) -> list[dict]:
                 continue
             if _is_actionable_trade(result):
                 continue
+            if _ignore_key(result) in ignore_pairs:
+                continue
             setup = str(result.get("Setup", ""))
+            premium_status = str(result.get("PremiumStatus", ""))
             if setup not in NEAR_SETUP_STATUSES:
+                continue
+            if setup in IGNORE_STATUSES or premium_status in IGNORE_PREMIUM_STATUSES:
                 continue
             rows.append(
                 {
@@ -394,8 +454,10 @@ def _tomorrow_plan(executive_decision: str, actionable: list[dict], small_accoun
 def build_daily_summary(scan_payload: dict[str, dict], report_date: str, failures: list[dict] | None = None) -> dict:
     actionable = _actionable_signal_rows(scan_payload)
     small_account_options = _small_account_options_rows(scan_payload)
-    watchlist = _watchlist_rows(scan_payload)
+    large_cap_debit_context = _large_cap_debit_rows(scan_payload)
     ignore = _ignore_rows(scan_payload)
+    ignore_pairs = {(row["ticker"], row["strategy"]) for row in ignore}
+    watchlist = _watchlist_rows(scan_payload, ignore_pairs=ignore_pairs)
     top_setup = select_top_setup(scan_payload)
     breadth_snapshot = _breadth_snapshot(scan_payload)
     market_state = _market_state(scan_payload, actionable, watchlist, ignore)
@@ -403,7 +465,7 @@ def build_daily_summary(scan_payload: dict[str, dict], report_date: str, failure
     tomorrow_plan = _tomorrow_plan(executive_decision, actionable, small_account_options, watchlist)
     workflow_failures = failures or []
     no_trade_reason = _no_trade_reason(len(actionable))
-    debit_spread_context = DEBIT_SPREAD_PROXY_CONTEXT if small_account_options else None
+    debit_spread_context = DEBIT_SPREAD_PROXY_CONTEXT if (small_account_options or large_cap_debit_context) else None
     paper_execution_checklist = _paper_execution_checklist(len(actionable))
 
     return {
@@ -413,6 +475,7 @@ def build_daily_summary(scan_payload: dict[str, dict], report_date: str, failure
         "breadth_snapshot": breadth_snapshot,
         "market_state": market_state,
         "actionable_signals": actionable,
+        "large_cap_debit_context": large_cap_debit_context,
         "small_account_options": small_account_options,
         "debit_spread_context": debit_spread_context,
         "watchlist_names": watchlist,
@@ -492,9 +555,20 @@ def render_daily_summary_markdown(summary: dict) -> str:
                 f"{row['price']:.2f} | Conviction: {row['conviction']} | {row['reason']}"
             )
 
-    lines.extend(["", "## Small Account Options"])
+    lines.extend(["", "## Large-Cap Debit Spread Context"])
+    if not summary["large_cap_debit_context"]:
+        lines.append("No large-cap debit spread BUY candidates.")
+    else:
+        for row in summary["large_cap_debit_context"]:
+            lines.append(
+                f"- {row['ticker']} | {row['spread_structure']} | Debit {row['debit']:.2f} | "
+                f"Max Loss {row['max_loss']:.2f} | Reward/Risk {row['reward_risk']:.2f} | "
+                f"Eligible: {row['small_account_eligible']} | {row['reason']}"
+            )
+
+    lines.extend(["", "## Small-Account Growth Debit Spread Candidates"])
     if not summary["small_account_options"]:
-        lines.append("No small-account debit spread BUY candidates.")
+        lines.append("No small-account growth debit spread BUY candidates.")
     else:
         for row in summary["small_account_options"]:
             lines.append(

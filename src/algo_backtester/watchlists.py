@@ -76,6 +76,23 @@ WATCHLIST_PROFILES = {
         "AAPL",
         "AMD",
     ],
+    "small_account_growth": [
+        "PLTR",
+        "UBER",
+        "SOFI",
+        "HOOD",
+        "PYPL",
+        "RIVN",
+        "DKNG",
+        "AFRM",
+        "HIMS",
+        "CLSK",
+        "IONQ",
+        "TOST",
+        "SNAP",
+        "SHOP",
+        "AMD",
+    ],
     "custom": [],
 }
 
@@ -89,6 +106,7 @@ DEFAULT_STRATEGY_PROFILES = {
 }
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "watchlists.json"
+DEFAULT_PROFILE_DIR = Path(__file__).resolve().parents[2] / "profiles"
 
 
 def _normalize_tickers(tickers: list[str]) -> list[str]:
@@ -127,9 +145,34 @@ def _load_config_overrides(config_path: Path | None = None) -> dict[str, list[st
     return overrides
 
 
+def _load_profile_overrides(profile_dir: Path | None = None) -> dict[str, list[str]]:
+    effective_profile_dir = profile_dir or DEFAULT_PROFILE_DIR
+    if not effective_profile_dir.exists():
+        return {}
+
+    overrides: dict[str, list[str]] = {}
+    for profile_path in sorted(effective_profile_dir.glob("*.json")):
+        with profile_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+
+        if isinstance(payload, list):
+            tickers = payload
+        elif isinstance(payload, dict) and isinstance(payload.get("tickers"), list):
+            tickers = payload["tickers"]
+        else:
+            raise ValueError(
+                f"Watchlist profile file must be a JSON list or an object with a 'tickers' list: {profile_path}"
+            )
+
+        overrides[profile_path.stem] = _normalize_tickers(tickers)
+
+    return overrides
+
+
 def _resolved_profiles() -> dict[str, list[str]]:
     profiles = {name: list(tickers) for name, tickers in WATCHLIST_PROFILES.items()}
     profiles.update(_load_config_overrides())
+    profiles.update(_load_profile_overrides())
     return profiles
 
 

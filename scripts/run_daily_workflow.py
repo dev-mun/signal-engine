@@ -42,7 +42,7 @@ from algo_backtester.reports.swing_options_debit_spread_report import (
 from algo_backtester.reports.swing_options_debit_spread_report import (
     save_scan_results as save_swing_options_debit_spread_scan_results,
 )
-from algo_backtester.watchlists import DEFAULT_STRATEGY_PROFILES, get_default_watchlist_for_strategy
+from algo_backtester.watchlists import DEFAULT_STRATEGY_PROFILES, get_default_watchlist_for_strategy, get_watchlist
 
 SUPPORTED_STRATEGIES = [
     "ema-rsi",
@@ -50,12 +50,14 @@ SUPPORTED_STRATEGIES = [
     "rsi-bollinger-v2",
     "swing-options-debit-spread",
 ]
+LARGE_CAP_DEBIT_PROFILE = "small_account_debit_spreads"
+GROWTH_DEBIT_PROFILE = "small_account_growth"
+DEBIT_PROFILE_RUNS = [LARGE_CAP_DEBIT_PROFILE, GROWTH_DEBIT_PROFILE]
 
 SCAN_RELATIVE_PATHS = {
     "ema-rsi": "ema_rsi/watchlist_scan_{date}.csv",
     "four-hour-trend": "four_hour/watchlist_scan_{date}.csv",
     "rsi-bollinger-v2": "rsi_bollinger_v2/watchlist_scan_{date}.csv",
-    "swing-options-debit-spread": "swing_options_debit_spread/scan_{date}.csv",
 }
 
 
@@ -126,9 +128,26 @@ def _rsi_bollinger_v2_config() -> RsiBollingerV2BacktestConfig:
     )
 
 
-def _scan_strategy(strategy: str, output_dir: str) -> dict:
-    tickers = get_default_watchlist_for_strategy(strategy)
-    profile = DEFAULT_STRATEGY_PROFILES[strategy]
+def _payload_key(strategy: str, profile: str | None = None) -> str:
+    if strategy == "swing-options-debit-spread" and profile:
+        return f"{strategy}:{profile}"
+    return strategy
+
+
+def _save_workflow_scan(strategy: str, report_date: str, results: list[dict], output_dir: str, profile: str | None = None) -> Path:
+    if strategy == "swing-options-debit-spread" and profile:
+        file_path = Path(output_dir) / "swing_options_debit_spread" / f"scan_{profile}_{report_date}.csv"
+    else:
+        template = SCAN_RELATIVE_PATHS[strategy]
+        file_path = Path(output_dir) / template.format(date=report_date)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(results).to_csv(file_path, index=False)
+    return file_path
+
+
+def _scan_strategy(strategy: str, output_dir: str, report_date: str, profile: str | None = None) -> dict[str, dict]:
+    effective_profile = profile or DEFAULT_STRATEGY_PROFILES[strategy]
+    tickers = get_watchlist(effective_profile) if profile is not None else get_default_watchlist_for_strategy(strategy)
 
     if strategy == "ema-rsi":
         results = scan_watchlist_ema_rsi(tickers=tickers, config=_ema_config())
@@ -145,19 +164,33 @@ def _scan_strategy(strategy: str, output_dir: str) -> dict:
     elif strategy == "swing-options-debit-spread":
         results = scan_watchlist_swing_options_debit_spread(tickers=tickers, config=SwingOptionsDebitSpreadConfig())
         print_swing_options_debit_spread_scan_results(results)
-        save_swing_options_debit_spread_scan_results(results, output_dir=output_dir)
+        _save_workflow_scan(strategy=strategy, report_date=report_date, results=results, output_dir=output_dir, profile=effective_profile)
     else:
         raise ValueError(f"Unsupported strategy: {strategy}")
 
+    if strategy == "swing-options-debit-spread":
+        return {
+            _payload_key(strategy, effective_profile): {
+                "strategy": strategy,
+                "profile": effective_profile,
+                "tickers": tickers,
+                "results": results,
+            }
+        }
+
     return {
-        "strategy": strategy,
-        "profile": profile,
-        "tickers": tickers,
-        "results": results,
+        _payload_key(strategy): {
+            "strategy": strategy,
+            "profile": effective_profile,
+            "tickers": tickers,
+            "results": results,
+        }
     }
 
 
-def _scan_report_path(strategy: str, report_date: str, output_dir: str) -> Path:
+def _scan_report_path(strategy: str, report_date: str, output_dir: str, profile: str | None = None) -> Path:
+    if strategy == "swing-options-debit-spread" and profile:
+        return Path(output_dir) / "swing_options_debit_spread" / f"scan_{profile}_{report_date}.csv"
     template = SCAN_RELATIVE_PATHS[strategy]
     return Path(output_dir) / template.format(date=report_date)
 
@@ -166,12 +199,27 @@ def _load_existing_scan_payload(strategies: list[str], report_date: str, output_
     payload: dict[str, dict] = {}
 
     for strategy in strategies:
+        if strategy == "swing-options-debit-spread":
+            for profile in DEBIT_PROFILE_RUNS:
+                file_path = _scan_report_path(strategy=strategy, report_date=report_date, output_dir=output_dir, profile=profile)
+                if not file_path.exists():
+                    raise FileNotFoundError("Missing scan reports. Run full workflow first.")
+
+                df = pd.read_csv(file_path)
+                payload[_payload_key(strategy, profile)] = {
+                    "strategy": strategy,
+                    "profile": profile,
+                    "tickers": get_watchlist(profile),
+                    "results": df.to_dict(orient="records"),
+                }
+            continue
+
         file_path = _scan_report_path(strategy=strategy, report_date=report_date, output_dir=output_dir)
         if not file_path.exists():
             raise FileNotFoundError("Missing scan reports. Run full workflow first.")
 
         df = pd.read_csv(file_path)
-        payload[strategy] = {
+        payload[_payload_key(strategy)] = {
             "strategy": strategy,
             "profile": DEFAULT_STRATEGY_PROFILES[strategy],
             "tickers": get_default_watchlist_for_strategy(strategy),
@@ -202,6 +250,8 @@ def _print_terminal_summary(paths: dict[str, Path], summary: dict, scan_payload:
     print(f"Markdown: {paths['markdown']}")
     print(f"Top Decision: {summary['executive_decision']}")
     print(f"Actionable Count: {actionable_count}")
+    print(f"Large-Cap Debit Profile: {LARGE_CAP_DEBIT_PROFILE}")
+    print(f"Growth Debit Profile: {GROWTH_DEBIT_PROFILE}")
     print(f"Top Setup: {_top_setup_line(scan_payload)}")
     if actionable_count == 0:
         print("Decision: No trade. Re-run after next market close.")
@@ -226,10 +276,24 @@ def run_workflow(
     scan_payload: dict[str, dict] = {}
     for strategy in strategies:
         try:
-            payload = _scan_strategy(strategy=strategy, output_dir=output_dir)
-            scan_payload[strategy] = payload
-            if not no_journal:
-                update_paper_trading_journal(results=payload["results"], output_dir=output_dir)
+            if strategy == "swing-options-debit-spread":
+                for profile in DEBIT_PROFILE_RUNS:
+                    payloads = _scan_strategy(
+                        strategy=strategy,
+                        output_dir=output_dir,
+                        report_date=report_date,
+                        profile=profile,
+                    )
+                    for payload_key, payload in payloads.items():
+                        scan_payload[payload_key] = payload
+                        if not no_journal:
+                            update_paper_trading_journal(results=payload["results"], output_dir=output_dir)
+            else:
+                payloads = _scan_strategy(strategy=strategy, output_dir=output_dir, report_date=report_date)
+                for payload_key, payload in payloads.items():
+                    scan_payload[payload_key] = payload
+                    if not no_journal:
+                        update_paper_trading_journal(results=payload["results"], output_dir=output_dir)
         except Exception as exc:
             if not skip_strategy_on_error:
                 raise
