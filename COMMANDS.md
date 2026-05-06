@@ -1,6 +1,39 @@
 # Commands
 
-## Daily Commands
+## Primary Daily Workflow
+
+### 1. Run Full Daily Workflow
+
+Run after market close:
+
+```bash
+python scripts/run_daily_workflow.py
+```
+
+What it does:
+
+- runs `ema-rsi`
+- runs `four-hour-trend`
+- runs `rsi-bollinger-v2`
+- runs `swing-options-debit-spread`
+- saves each scan report
+- updates the paper journal
+- generates:
+  - `reports/daily/YYYY-MM-DD/daily_summary.md`
+  - `reports/daily/YYYY-MM-DD/daily_summary.json`
+
+Optional:
+
+```bash
+python scripts/run_daily_workflow.py --auto-open-summary
+python scripts/run_daily_workflow.py --summary-only --date YYYY-MM-DD
+python scripts/run_daily_workflow.py --strategies swing-options-debit-spread
+python scripts/run_daily_workflow.py --skip-strategy-on-error
+```
+
+---
+
+## Strategy Scan Commands
 
 ### 1. Daily EMA-RSI Scan
 
