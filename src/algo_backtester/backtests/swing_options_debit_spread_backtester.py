@@ -29,6 +29,9 @@ from algo_backtester.strategies.swing_options_debit_spread import (
     build_bull_call_debit_spread,
 )
 from algo_backtester.data_loader import load_yfinance_data
+from algo_backtester.market_regime import MarketRegimeSnapshot, analyze_market_regime, build_market_regime_history
+from algo_backtester.options_signal_quality import OptionsSignalAssessment, evaluate_long_options_setup
+from algo_backtester.options_utils import liquidity_score_for_ticker
 from algo_backtester.strategies.swing_options import SwingSourceSignal, classify_swing_setup
 from algo_backtester.watchlists import get_default_watchlist_for_strategy
 
@@ -47,6 +50,31 @@ class SwingOptionsDebitSpreadConfig:
     time_stop_days: int = 5
     interval: str = "1h"
     mode: str = "tuned"
+
+
+def _action_state(signal: str, setup: str) -> str:
+    normalized_signal = str(signal)
+    normalized_setup = str(setup)
+
+    if normalized_signal == "ERROR":
+        return "ERROR"
+    if normalized_signal in {"BUY", "SHORT_SETUP", "SELL", "SELL_SHORT", "BEARISH_ENTRY"}:
+        return "ACTIONABLE"
+    if normalized_setup == "NO_TRADE":
+        return "NO_TRADE"
+    if normalized_setup in {"EXTENDED", "WEAK_TREND", "AVOID"}:
+        return "IGNORE"
+    if normalized_setup in {"WAIT", "WATCHLIST", "NEAR_SETUP", "NEEDS_PULLBACK", "OVERSOLD"}:
+        return "WATCHLIST"
+    return "WATCHLIST"
+
+
+def _warning_text(warnings: list[str]) -> str:
+    return " | ".join([warning for warning in warnings if warning])
+
+
+def _no_trade_text(no_trade_reasons: list[str]) -> str:
+    return " | ".join([reason for reason in no_trade_reasons if reason])
 
 
 def _planned_execution_date(signal_date: str) -> str:
@@ -183,7 +211,13 @@ def _reason_text(
     plan: DebitSpreadPlan | None,
     conversion_reason: str,
     raw_setup: str,
+    assessment: OptionsSignalAssessment,
 ) -> str:
+    if assessment.evaluated_setup == "NO_TRADE":
+        if assessment.no_trade_reasons:
+            return _no_trade_text(assessment.no_trade_reasons)
+        return assessment.final_decision
+
     if plan is None:
         return "No debit spread plan generated because the underlying swing-options signal remained non-actionable."
 
@@ -199,7 +233,8 @@ def _reason_text(
     if signal != "BUY":
         blocker = _blocker_reason(raw_setup=raw_setup, plan=plan)
         base = "No debit spread plan generated because the underlying swing-options signal remained non-actionable."
-        return f"{base} {blocker}".strip()
+        warning_text = _warning_text(assessment.warnings)
+        return " ".join([text for text in [base, blocker, warning_text] if text]).strip()
 
     return "Debit spread plan generated from confirmed swing-options BUY signal."
 
@@ -208,6 +243,7 @@ def _build_result_from_underlying(
     ticker: str,
     underlying_result: dict,
     plan: DebitSpreadPlan | None,
+    assessment: OptionsSignalAssessment,
     *,
     mode: str,
     sources: list[SwingSourceSignal],
@@ -217,19 +253,22 @@ def _build_result_from_underlying(
     prev_close: float,
 ) -> dict:
     underlying_signal = str(underlying_result["Signal"])
-    raw_setup = str(underlying_result["Setup"])
-    signal, final_setup, conversion_reason = _resolve_debit_spread_signal(
-        raw_setup=raw_setup,
-        strict_signal=underlying_signal,
-        score=float(underlying_result["Score"]),
-        plan=plan,
-        sources=sources,
-        close_price=close_price,
-        ema50=ema50,
-        rsi=rsi,
-        prev_close=prev_close,
-        mode=mode,
-    )
+    raw_setup = assessment.evaluated_setup
+    if raw_setup == "NO_TRADE":
+        signal, final_setup, conversion_reason = "HOLD", "NO_TRADE", "NO_TRADE_FILTER"
+    else:
+        signal, final_setup, conversion_reason = _resolve_debit_spread_signal(
+            raw_setup=raw_setup,
+            strict_signal=underlying_signal,
+            score=float(assessment.setup_score),
+            plan=plan,
+            sources=sources,
+            close_price=close_price,
+            ema50=ema50,
+            rsi=rsi,
+            prev_close=prev_close,
+            mode=mode,
+        )
     eligible = plan is not None and plan.small_account_eligible and signal == "BUY"
     premium_status = "N/A" if plan is None else plan.premium_status
     reason = _reason_text(
@@ -237,15 +276,21 @@ def _build_result_from_underlying(
         plan=plan,
         conversion_reason=conversion_reason,
         raw_setup=raw_setup,
+        assessment=assessment,
     )
-    option_reason = DEBIT_SPREAD_PLANNER_DISCLAIMER if plan is None else plan.notes
+    option_reason_parts = [DEBIT_SPREAD_PLANNER_DISCLAIMER if plan is None else plan.notes]
+    if assessment.warnings:
+        option_reason_parts.append(_warning_text(assessment.warnings))
+    option_reason = " | ".join([part for part in option_reason_parts if part]).strip()
 
     result = {
         "Ticker": ticker,
         "Strategy": "swing-options-debit-spread",
         "Signal": signal,
         "Setup": final_setup,
-        "Score": float(underlying_result["Score"]),
+        "Score": float(assessment.setup_score),
+        "BaseScore": float(underlying_result["Score"]),
+        "FinalScore": float(assessment.setup_score),
         "Price": float(underlying_result["Price"]),
         "OptionStructure": "N/A" if plan is None else plan.option_structure,
         "LongStrike": 0.0 if plan is None else plan.long_strike,
@@ -262,13 +307,24 @@ def _build_result_from_underlying(
         "SmallAccountEligible": "YES" if eligible else "NO",
         "ApproximationConfidence": "N/A" if plan is None else plan.approximation_confidence,
         "ApproximationWarning": "" if plan is None else plan.approximation_warning,
+        "MarketRegime": assessment.market_regime,
+        "RegimeReason": assessment.regime_reason,
+        "TimeframeConfirmation": assessment.timeframe_confirmation,
+        "DailyTrend": assessment.daily_trend,
+        "FourHourTrend": assessment.four_hour_trend,
+        "SetupScore": float(assessment.setup_score),
+        "SetupRating": assessment.setup_rating,
+        "NoTradeReasons": assessment.no_trade_reasons,
+        "Warnings": assessment.warnings,
+        "FinalDecision": assessment.final_decision,
         "Reason": reason,
         "SourceSummary": str(underlying_result.get("SourceSummary", "")),
         "RSI": float(underlying_result.get("RSI", 0.0)),
         "ATR": float(underlying_result.get("ATR", 0.0)),
         "SignalDate": str(underlying_result["SignalDate"]),
         "PlannedExecutionDate": str(underlying_result.get("PlannedExecutionDate", _planned_execution_date(str(underlying_result["SignalDate"])))),
-        "UniverseStatus": "ELIGIBLE" if signal == "BUY" else "WATCH",
+        "ActionState": _action_state(signal, final_setup),
+        "UniverseStatus": "ELIGIBLE" if signal == "BUY" else "IGNORE" if final_setup == "NO_TRADE" else "WATCH",
         "UniverseReason": reason,
         "SetupStatus": final_setup,
         "DistanceToSetup": final_setup,
@@ -288,8 +344,10 @@ def analyze_ticker(
     start: str = "2018-01-01",
     end: str | None = None,
     config: SwingOptionsDebitSpreadConfig | None = None,
+    market_regime_snapshot: MarketRegimeSnapshot | None = None,
 ) -> dict:
     effective_config = config or SwingOptionsDebitSpreadConfig()
+    effective_regime = market_regime_snapshot or analyze_market_regime(start=start, end=end)
     underlying_analysis = analyze_swing_options_ticker(
         ticker=ticker,
         start=start,
@@ -309,6 +367,7 @@ def analyze_ticker(
     )
     sources = [SwingSourceSignal(**source) for source in underlying_analysis["sources"]]
     ema_context = source_evaluation["contexts"]["ema-rsi"]
+    four_hour_source = next(source for source in sources if source.strategy == "four-hour-trend")
     latest = ema_context["latest"]
     prev = ema_context["prev"]
     plan = None
@@ -326,12 +385,31 @@ def analyze_ticker(
             preferred_debit_min=effective_config.preferred_debit_min,
             preferred_debit_max=effective_config.preferred_debit_max,
         )
+    avg_dollar_volume = float(latest["Close"]) * float(latest["AverageVolume20"])
+    assessment = evaluate_long_options_setup(
+        signal_date=str(underlying_result["SignalDate"]),
+        market_regime_snapshot=effective_regime,
+        daily_close=float(latest["Close"]),
+        ema20=float(latest["EMA20"]),
+        ema50=float(latest["EMA50"]),
+        ema200=float(latest["EMA200"]),
+        rsi=float(latest["RSI"]),
+        atr=float(latest["ATR"]),
+        avg_dollar_volume=avg_dollar_volume,
+        volume_confirmed=float(latest["Volume"]) > float(latest["AverageVolume20"]),
+        recent_momentum=float(latest["Close"]) > float(prev["Close"]),
+        liquidity=plan.liquidity if plan is not None else liquidity_score_for_ticker(ticker),
+        earnings_date=str(underlying_result.get("EarningsDate", "PLACEHOLDER_OK")),
+        reward_risk=0.0 if plan is None else float(plan.reward_risk),
+        four_hour_source=four_hour_source,
+    )
 
     return {
         "result": _build_result_from_underlying(
             ticker=ticker,
             underlying_result=underlying_result,
             plan=plan,
+            assessment=assessment,
             mode=effective_config.mode,
             sources=sources,
             close_price=float(latest["Close"]),
@@ -348,8 +426,15 @@ def scan_ticker(
     start: str = "2018-01-01",
     end: str | None = None,
     config: SwingOptionsDebitSpreadConfig | None = None,
+    market_regime_snapshot: MarketRegimeSnapshot | None = None,
 ) -> dict:
-    return analyze_ticker(ticker=ticker, start=start, end=end, config=config)["result"]
+    return analyze_ticker(
+        ticker=ticker,
+        start=start,
+        end=end,
+        config=config,
+        market_regime_snapshot=market_regime_snapshot,
+    )["result"]
 
 
 def scan_watchlist(
@@ -358,13 +443,22 @@ def scan_watchlist(
     end: str | None = None,
     config: SwingOptionsDebitSpreadConfig | None = None,
 ) -> list[dict]:
+    regime_snapshot = analyze_market_regime(start=start, end=end)
     results = []
     for ticker in tickers:
         clean_ticker = ticker.strip().upper()
         if not clean_ticker:
             continue
         try:
-            results.append(scan_ticker(ticker=clean_ticker, start=start, end=end, config=config))
+            results.append(
+                scan_ticker(
+                    ticker=clean_ticker,
+                    start=start,
+                    end=end,
+                    config=config,
+                    market_regime_snapshot=regime_snapshot,
+                )
+            )
         except Exception as exc:
             results.append(
                 {
@@ -373,6 +467,8 @@ def scan_watchlist(
                     "Signal": "ERROR",
                     "Setup": "ERROR",
                     "Score": 0.0,
+                    "BaseScore": 0.0,
+                    "FinalScore": 0.0,
                     "Price": 0.0,
                     "OptionStructure": "N/A",
                     "LongStrike": 0.0,
@@ -389,6 +485,17 @@ def scan_watchlist(
                     "SmallAccountEligible": "NO",
                     "ApproximationConfidence": "N/A",
                     "ApproximationWarning": "",
+                    "MarketRegime": "UNKNOWN",
+                    "RegimeReason": "",
+                    "TimeframeConfirmation": {},
+                    "DailyTrend": "UNKNOWN",
+                    "FourHourTrend": "UNKNOWN",
+                    "SetupScore": 0.0,
+                    "SetupRating": "NO_TRADE",
+                    "NoTradeReasons": [],
+                    "Warnings": [],
+                    "FinalDecision": "No trade. Signal generation failed.",
+                    "ActionState": "ERROR",
                     "Reason": str(exc),
                     "SourceSummary": "ERROR",
                     "RSI": 0.0,
@@ -423,12 +530,28 @@ def _label_historical_signal_rows(
     merged_df: pd.DataFrame,
     ticker: str,
     config: SwingOptionsDebitSpreadConfig,
+    market_regime_history: pd.DataFrame,
 ) -> pd.DataFrame:
     if merged_df.empty:
         return merged_df.copy()
 
     rows: list[dict] = []
     for signal_date, row in merged_df.iterrows():
+        regime_snapshot_row = market_regime_history.reindex(
+            market_regime_history.index.union(pd.DatetimeIndex([signal_date]))
+        ).sort_index().ffill().bfill().loc[signal_date]
+        market_regime_snapshot = MarketRegimeSnapshot(
+            market_regime=str(regime_snapshot_row["market_regime"]),
+            regime_reason=str(regime_snapshot_row["regime_reason"]),
+            spy_close=float(regime_snapshot_row["SPY_Close"]),
+            spy_sma20=float(regime_snapshot_row["SPY_SMA20"]),
+            spy_sma50=float(regime_snapshot_row["SPY_SMA50"]),
+            qqq_close=float(regime_snapshot_row["QQQ_Close"]),
+            qqq_sma20=float(regime_snapshot_row["QQQ_SMA20"]),
+            qqq_sma50=float(regime_snapshot_row["QQQ_SMA50"]),
+            vix_close=float(regime_snapshot_row["VIX_Close"]),
+            vix_trend=str(regime_snapshot_row["VIX_Trend"]),
+        )
         ema_source = SwingSourceSignal(
             strategy="ema-rsi",
             signal=str(row["Signal_ema"]),
@@ -523,6 +646,24 @@ def _label_historical_signal_rows(
                 preferred_debit_min=config.preferred_debit_min,
                 preferred_debit_max=config.preferred_debit_max,
             )
+        avg_dollar_volume = float(row["Close"]) * float(row["AverageVolume20"])
+        assessment = evaluate_long_options_setup(
+            signal_date=str(signal_date.date()),
+            market_regime_snapshot=market_regime_snapshot,
+            daily_close=float(row["Close"]),
+            ema20=float(row["EMA20"]),
+            ema50=float(row["EMA50"]),
+            ema200=float(row["EMA200"]),
+            rsi=float(row["RSI_ema"]),
+            atr=float(row["ATR_ema"]),
+            avg_dollar_volume=avg_dollar_volume,
+            volume_confirmed=float(row["Volume"]) > float(row["AverageVolume20"]),
+            recent_momentum=float(row["Close"]) > float(row["PrevClose"]),
+            liquidity=plan.liquidity if plan is not None else liquidity_score_for_ticker(ticker),
+            earnings_date="PLACEHOLDER_OK",
+            reward_risk=0.0 if plan is None else float(plan.reward_risk),
+            four_hour_source=four_hour_source,
+        )
 
         labeled = _build_result_from_underlying(
             ticker=ticker,
@@ -537,10 +678,11 @@ def _label_historical_signal_rows(
                 "PlannedExecutionDate": _planned_execution_date(str(signal_date.date())),
                 "SourceSummary": source_summary,
                 "Equity": 0.0,
-                "AvgDollarVolume": 0.0,
+                "AvgDollarVolume": avg_dollar_volume,
                 "EarningsDate": "PLACEHOLDER_OK",
             },
             plan=plan,
+            assessment=assessment,
             mode=config.mode,
             sources=sources,
             close_price=float(row["Close"]),
@@ -562,6 +704,7 @@ def build_historical_debit_spread_signal_history(
     effective_config = config or SwingOptionsDebitSpreadConfig()
     signal_frames: list[pd.DataFrame] = []
     daily_data_by_ticker: dict[str, pd.DataFrame] = {}
+    market_regime_history = build_market_regime_history(start=start, end=end)
 
     for ticker in tickers:
         clean_ticker = str(ticker).strip().upper()
@@ -576,6 +719,7 @@ def build_historical_debit_spread_signal_history(
             merged_df=merged_df,
             ticker=clean_ticker,
             config=effective_config,
+            market_regime_history=market_regime_history,
         )
         if not labeled_df.empty:
             signal_frames.append(labeled_df)
@@ -600,7 +744,7 @@ def select_best_daily_candidate(signal_df: pd.DataFrame) -> pd.DataFrame:
         return signal_df.copy()
     premium_rank = signal_df["PremiumStatus"].map({"OK": 0, "ACCEPTABLE": 1}).fillna(99)
     ordered = signal_df.assign(_PremiumRank=premium_rank).sort_values(
-        by=["SignalDate", "_PremiumRank", "RewardRisk", "Score", "EstDebit", "Ticker"],
+        by=["SignalDate", "_PremiumRank", "RewardRisk", "FinalScore", "EstDebit", "Ticker"],
         ascending=[True, True, False, False, True, True],
         kind="mergesort",
     )
@@ -651,7 +795,7 @@ def replay_debit_spread_candidates(
     trades: list[dict] = []
     current_exit_date: str | None = None
 
-    for row in candidate_df.sort_values(by=["SignalDate", "RewardRisk", "Score"], ascending=[True, False, False]).itertuples(index=False):
+    for row in candidate_df.sort_values(by=["SignalDate", "RewardRisk", "FinalScore"], ascending=[True, False, False]).itertuples(index=False):
         signal_date = str(row.SignalDate)
         if current_exit_date is not None and pd.Timestamp(signal_date) <= pd.Timestamp(current_exit_date):
             continue

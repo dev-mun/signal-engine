@@ -22,6 +22,7 @@ def _sample_scan_payload() -> dict[str, dict]:
                     "Strategy": "ema-rsi",
                     "Signal": "HOLD",
                     "Setup": "WATCHLIST",
+                    "ActionState": "WATCHLIST",
                     "Price": 210.0,
                     "RSI": 57.0,
                     "ATR": 3.2,
@@ -32,6 +33,7 @@ def _sample_scan_payload() -> dict[str, dict]:
                     "Strategy": "ema-rsi",
                     "Signal": "HOLD",
                     "Setup": "EXTENDED",
+                    "ActionState": "IGNORE",
                     "Price": 600.0,
                     "RSI": 71.0,
                     "ATR": 5.0,
@@ -58,6 +60,13 @@ def _sample_scan_payload() -> dict[str, dict]:
                     "RewardRisk": 2.1,
                     "SmallAccountEligible": "YES",
                     "PremiumStatus": "OK",
+                    "ActionState": "ACTIONABLE",
+                    "MarketRegime": "BULLISH",
+                    "RegimeReason": "SPY and QQQ above trend while VIX is flat to lower.",
+                    "FinalScore": 91.0,
+                    "SetupScore": 91.0,
+                    "SetupRating": "A_SETUP",
+                    "FinalDecision": "Review before market open.",
                     "Reason": "Large-cap benchmark candidate.",
                 },
                 {
@@ -69,6 +78,7 @@ def _sample_scan_payload() -> dict[str, dict]:
                     "RSI": 73.0,
                     "ATR": 4.1,
                     "PremiumStatus": "TOO_EXPENSIVE",
+                    "ActionState": "IGNORE",
                     "Reason": "Blocked because the setup is EXTENDED.",
                 },
             ],
@@ -92,6 +102,13 @@ def _sample_scan_payload() -> dict[str, dict]:
                     "RewardRisk": 2.4,
                     "SmallAccountEligible": "YES",
                     "PremiumStatus": "OK",
+                    "ActionState": "ACTIONABLE",
+                    "MarketRegime": "BULLISH",
+                    "RegimeReason": "SPY and QQQ above trend while VIX is flat to lower.",
+                    "FinalScore": 88.0,
+                    "SetupScore": 88.0,
+                    "SetupRating": "A_SETUP",
+                    "FinalDecision": "Review before market open.",
                     "Reason": "Base swing-options signal was HOLD. Tuned conversion upgraded the setup.",
                 },
             ],
@@ -117,7 +134,9 @@ def test_build_daily_summary_identifies_debit_spread_setup():
         "weak": 0,
         "avoid": 0,
     }
+    assert summary["market_regime"]["regime"] == "BULLISH"
     assert any(row["ticker"] == "SPY" for row in summary["ignore_list"])
+    assert summary["key_no_trade_reasons"][0]["reason"] == "EXTENDED"
     assert summary["debit_spread_context"] is not None
     assert summary["no_trade_reason"] is None
     assert summary["paper_execution_checklist"]
@@ -127,7 +146,9 @@ def test_build_daily_summary_identifies_debit_spread_setup():
 def test_no_trade_reason_only_when_no_actionable():
     payload = _sample_scan_payload()
     payload["swing-options-debit-spread:small_account_growth"]["results"][0]["Signal"] = "HOLD"
+    payload["swing-options-debit-spread:small_account_growth"]["results"][0]["ActionState"] = "WATCHLIST"
     payload["swing-options-debit-spread:small_account_debit_spreads"]["results"][0]["Signal"] = "HOLD"
+    payload["swing-options-debit-spread:small_account_debit_spreads"]["results"][0]["ActionState"] = "WATCHLIST"
     summary = build_daily_summary(scan_payload=payload, report_date="2026-05-05")
 
     assert summary["actionable_count"] == 0
@@ -149,7 +170,13 @@ def test_render_and_save_daily_summary(tmp_path: Path):
     assert "## Executive Decision" in markdown
     assert "## Top Setup" in markdown
     assert "Ticker: AAPL" in markdown
+    assert "Market Regime: BULLISH" in markdown
+    assert "Final Score: 88.00" in markdown
+    assert "Setup Score: 88.00" in markdown
+    assert "Setup Rating: A_SETUP" in markdown
     assert "Conviction: Medium" in markdown
+    assert "## Market Regime" in markdown
+    assert "Regime: BULLISH" in markdown
     assert "## Breadth Snapshot" in markdown
     assert "## Large-Cap Debit Spread Context" in markdown
     assert "QQQ | Bull Call Debit Spread 500/515" in markdown
@@ -157,6 +184,8 @@ def test_render_and_save_daily_summary(tmp_path: Path):
     assert "AAPL | Bull Call Debit Spread 210/220" in markdown
     assert "## Debit Spread Historical Context" in markdown
     assert "## Manual Live Chain Confirmation Required" in markdown
+    assert "## Key No-Trade Reasons" in markdown
+    assert "- EXTENDED: 2" in markdown
     assert "Planner output is not an executable order. It is only a candidate generator." in markdown
     assert "## Paper Execution Checklist" in markdown
     assert "PROXY VALIDATION ONLY" in markdown
@@ -238,3 +267,38 @@ def test_no_duplicate_ticker_strategy_pair_across_watchlist_and_ignore():
     ignore_pairs = {(row["ticker"], row["strategy"]) for row in summary["ignore_list"]}
 
     assert watchlist_pairs.isdisjoint(ignore_pairs)
+
+
+def test_watchlist_and_ignore_follow_action_state():
+    payload = _sample_scan_payload()
+    payload["four-hour-trend"] = {
+        "strategy": "four-hour-trend",
+        "profile": "broad_market",
+        "tickers": ["PLTR", "SHOP"],
+        "results": [
+            {
+                "Ticker": "PLTR",
+                "Strategy": "four-hour-trend",
+                "Signal": "HOLD",
+                "Setup": "WAIT",
+                "ActionState": "WATCHLIST",
+                "Reason": "Needs more confirmation.",
+            },
+            {
+                "Ticker": "SHOP",
+                "Strategy": "four-hour-trend",
+                "Signal": "HOLD",
+                "Setup": "NO_TRADE",
+                "ActionState": "NO_TRADE",
+                "NoTradeReasons": ["ATR is too low."],
+                "Reason": "No trade.",
+            },
+        ],
+    }
+
+    summary = build_daily_summary(scan_payload=payload, report_date="2026-05-05")
+    watchlist_pairs = {(row["ticker"], row["strategy"]) for row in summary["watchlist_names"]}
+    ignore_pairs = {(row["ticker"], row["strategy"]) for row in summary["ignore_list"]}
+
+    assert ("PLTR", "four-hour-trend") in watchlist_pairs
+    assert ("SHOP", "four-hour-trend") in ignore_pairs

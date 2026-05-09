@@ -245,11 +245,13 @@ def _open_summary(markdown_path: Path) -> None:
 
 def _print_terminal_summary(paths: dict[str, Path], summary: dict, scan_payload: dict[str, dict]) -> None:
     actionable_count = int(summary["actionable_count"])
+    regime = str(summary.get("market_regime", {}).get("regime", "UNKNOWN") or "UNKNOWN")
     print("\nDaily Workflow Summary")
     print("----------------------")
     print(f"Markdown: {paths['markdown']}")
     print(f"Top Decision: {summary['executive_decision']}")
     print(f"Actionable Count: {actionable_count}")
+    print(f"Market Regime: {regime}")
     print(f"Large-Cap Debit Profile: {LARGE_CAP_DEBIT_PROFILE}")
     print(f"Growth Debit Profile: {GROWTH_DEBIT_PROFILE}")
     print(f"Top Setup: {_top_setup_line(scan_payload)}")

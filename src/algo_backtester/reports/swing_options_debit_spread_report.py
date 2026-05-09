@@ -22,8 +22,11 @@ def print_scan_results(results: list[dict]) -> None:
         f'{"Ticker":<8} '
         f'{"Strategy":<28} '
         f'{"Signal":<8} '
+        f'{"ActionState":<12} '
         f'{"Setup":<12} '
-        f'{"Score":>7} '
+        f'{"Regime":<9} '
+        f'{"Rating":<10} '
+        f'{"FinalScore":>10} '
         f'{"Price":>10} '
         f'{"OptionStructure":<28} '
         f'{"LongStrike":>12} '
@@ -39,7 +42,7 @@ def print_scan_results(results: list[dict]) -> None:
         f'{"SmallAcct":<10} '
         f"Reason"
     )
-    print("-" * 280)
+    print("-" * 310)
 
     for result in results:
         if result["Signal"] == "ERROR":
@@ -48,8 +51,11 @@ def print_scan_results(results: list[dict]) -> None:
             f'{result["Ticker"]:<8} '
             f'{result["Strategy"]:<28} '
             f'{result["Signal"]:<8} '
+            f'{result.get("ActionState", "WATCHLIST"):<12} '
             f'{result["Setup"]:<12} '
-            f'{result["Score"]:>7.2f} '
+            f'{result["MarketRegime"]:<9} '
+            f'{result["SetupRating"]:<10} '
+            f'{float(result.get("FinalScore", result.get("SetupScore", result.get("Score", 0.0))) or 0.0):>10.2f} '
             f'{result["Price"]:>10.2f} '
             f'{result["OptionStructure"]:<28} '
             f'{result["LongStrike"]:>12.2f} '
@@ -115,8 +121,17 @@ def print_ticker_plan(analysis: dict) -> None:
     print("-----------------")
     print(f"Ticker: {result['Ticker']}")
     print(f"Signal: {result['Signal']}")
+    print(f"Action State: {result.get('ActionState', 'WATCHLIST')}")
     print(f"Setup: {result['Setup']}")
-    print(f"Score: {result['Score']:.2f}")
+    print(f"Base Score: {float(result.get('BaseScore', 0.0) or 0.0):.2f}")
+    print(f"Setup Score: {float(result.get('SetupScore', result.get('Score', 0.0)) or 0.0):.2f}")
+    print(f"Final Score: {float(result.get('FinalScore', result.get('SetupScore', result.get('Score', 0.0))) or 0.0):.2f}")
+    print(f"Market Regime: {result['MarketRegime']}")
+    print(f"Regime Reason: {result['RegimeReason']}")
+    print(f"Daily Trend: {result['DailyTrend']}")
+    print(f"4H Trend: {result['FourHourTrend']}")
+    print(f"Timeframe Confirmation: {result['TimeframeConfirmation']}")
+    print(f"Setup Rating: {result['SetupRating']}")
     print(f"Structure: {result['OptionStructure']}")
     print(f"Long Strike: {result['LongStrike']:.2f}")
     print(f"Short Strike: {result['ShortStrike']:.2f}")
@@ -132,6 +147,11 @@ def print_ticker_plan(analysis: dict) -> None:
         print(f"Approximation Warning: {result['ApproximationWarning']}")
     print(f"Premium Status: {result['PremiumStatus']}")
     print(f"Small Account Eligible: {result['SmallAccountEligible']}")
+    if result["NoTradeReasons"]:
+        print(f"No-Trade Reasons: {result['NoTradeReasons']}")
+    if result["Warnings"]:
+        print(f"Warnings: {result['Warnings']}")
+    print(f"Final Decision: {result['FinalDecision']}")
     print(f"Reason: {result['Reason']}")
 
 
