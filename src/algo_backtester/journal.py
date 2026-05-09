@@ -38,6 +38,13 @@ DAILY_SCAN_LOG_COLUMNS = [
     "Options Reason",
     "Avg Dollar Volume",
     "Earnings Date",
+    "Market Regime",
+    "Action State",
+    "Final Score",
+    "Setup Score",
+    "Setup Rating",
+    "No Trade Reasons",
+    "Final Decision",
 ]
 
 TRADE_JOURNAL_COLUMNS = [
@@ -76,6 +83,13 @@ TRADE_JOURNAL_COLUMNS = [
     "LiveChainConfirmed",
     "PlannerMismatch",
     "SkipReason",
+    "MarketRegime",
+    "ActionState",
+    "FinalScore",
+    "SetupScore",
+    "SetupRating",
+    "NoTradeReasons",
+    "FinalDecision",
 ]
 
 
@@ -197,6 +211,13 @@ def _build_daily_scan_rows(results: list[dict]) -> pd.DataFrame:
                 "Options Reason": _safe_value(result.get("OptionsReason", "")),
                 "Avg Dollar Volume": _safe_value(result.get("AvgDollarVolume", "")),
                 "Earnings Date": _safe_value(result.get("EarningsDate", "")),
+                "Market Regime": _safe_value(result.get("MarketRegime", "")),
+                "Action State": _safe_value(result.get("ActionState", "")),
+                "Final Score": _safe_value(result.get("FinalScore", result.get("SetupScore", ""))),
+                "Setup Score": _safe_value(result.get("SetupScore", "")),
+                "Setup Rating": _safe_value(result.get("SetupRating", "")),
+                "No Trade Reasons": _safe_value(" | ".join(result.get("NoTradeReasons", []))),
+                "Final Decision": _safe_value(result.get("FinalDecision", "")),
             }
         )
 
@@ -252,6 +273,13 @@ def _build_trade_journal_rows(results: list[dict]) -> pd.DataFrame:
                 "LiveChainConfirmed": _safe_value(result.get("LiveChainConfirmed", "")),
                 "PlannerMismatch": _safe_value(result.get("PlannerMismatch", "")),
                 "SkipReason": _safe_value(result.get("SkipReason", "")),
+                "MarketRegime": _safe_value(result.get("MarketRegime", "")),
+                "ActionState": _safe_value(result.get("ActionState", "")),
+                "FinalScore": _safe_value(result.get("FinalScore", result.get("SetupScore", ""))),
+                "SetupScore": _safe_value(result.get("SetupScore", "")),
+                "SetupRating": _safe_value(result.get("SetupRating", "")),
+                "NoTradeReasons": _safe_value(" | ".join(result.get("NoTradeReasons", []))),
+                "FinalDecision": _safe_value(result.get("FinalDecision", "")),
             }
         )
 

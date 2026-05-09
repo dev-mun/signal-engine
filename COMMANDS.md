@@ -15,12 +15,21 @@ What it does:
 - runs `ema-rsi`
 - runs `four-hour-trend`
 - runs `rsi-bollinger-v2`
-- runs `swing-options-debit-spread`
+- runs `swing-options-debit-spread` for `small_account_debit_spreads`
+- runs `swing-options-debit-spread` for `small_account_growth`
 - saves each scan report
 - updates the paper journal
 - generates:
   - `reports/daily/YYYY-MM-DD/daily_summary.md`
   - `reports/daily/YYYY-MM-DD/daily_summary.json`
+
+The daily summary now includes:
+
+- market regime
+- top setup
+- final score
+- action state
+- key no-trade reasons
 
 Optional:
 
@@ -95,37 +104,78 @@ python main.py --scan --strategy swing-options-debit-spread --no-plot --journal
 
 Purpose:
 
-- focused small-account debit spread universe
-- identifies affordable bull call debit spread candidates for a $2k to $3k account
+- large-cap benchmark/context profile
+- runs the default `small_account_debit_spreads` universe
+- daily journal update
+
+### 5. Daily Swing Options Growth Universe Scan
+
+Run after market close:
+
+```bash
+python main.py --scan --strategy swing-options-debit-spread --profile small_account_growth --no-plot --journal
+```
+
+Purpose:
+
+- primary small-account deployment universe
+- lower-priced liquid names more suitable for small-account debit spread planning
 - daily journal update
 
 # Swing Options Daily Workflow
+
+## Daily Workflow Runner (Preferred)
+
+Run:
+
+```bash
+python scripts/run_daily_workflow.py
+```
+
+Operational use:
+
+- this is the preferred daily command
+- runs all stock scans plus both debit spread profiles
+- writes the daily markdown/json summary
+- prints top decision, market regime, and top setup
+- if the top setup is from a stock strategy, risk/reward remains directional-only and no options structure is implied
 
 ## Daily Small Account Scan (After Market Close)
 
 Run:
 
 ```bash
-python main.py --scan --strategy swing-options-debit-spread --no-plot --journal
+python main.py --scan --strategy swing-options-debit-spread --profile small_account_growth --no-plot --journal
 ```
 
 Purpose:
 
 - daily post-close scan
-- identify small-account eligible bull call debit spread setups
+- identify small-account eligible bull call debit spread setups in the primary growth universe
 - use tuned mode as the live production default
 - only review affordable trades for a $2k to $3k account
 - planner output is a candidate generator, not an executable order
 
+Context scan:
+
+```bash
+python main.py --scan --strategy swing-options-debit-spread --profile small_account_debit_spreads --no-plot --journal
+```
+
+- use this for large-cap benchmark/context
+- do not treat it as the primary deployment universe
+
 Review only rows where:
 
 - `Signal = BUY`
+- `ActionState = ACTIONABLE`
 - `SmallAccountEligible = YES`
 - `PremiumStatus = OK` or `ACCEPTABLE`
 
 Ignore:
 
 - `HOLD`
+- `NO_TRADE`
 - `EXTENDED`
 - `AVOID`
 - `TOO_EXPENSIVE`

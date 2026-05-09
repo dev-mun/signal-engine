@@ -50,6 +50,13 @@ def test_update_paper_trading_journal_creates_workbook_and_dedupes_rows(tmp_path
             "LiveChainConfirmed": "YES",
             "PlannerMismatch": "YES",
             "SkipReason": "",
+            "MarketRegime": "BULLISH",
+            "ActionState": "ACTIONABLE",
+            "FinalScore": 88.0,
+            "SetupScore": 88.0,
+            "SetupRating": "A_SETUP",
+            "NoTradeReasons": [],
+            "FinalDecision": "Review before market open. Only enter if continuation structure remains intact and liquidity is acceptable.",
         },
         {
             "Ticker": "MSFT",
@@ -101,6 +108,11 @@ def test_update_paper_trading_journal_creates_workbook_and_dedupes_rows(tmp_path
     assert float(trade_df.iloc[0]["LiveDebit"]) == 5.45
     assert trade_df.iloc[0]["LiveChainConfirmed"] == "YES"
     assert trade_df.iloc[0]["PlannerMismatch"] == "YES"
+    assert trade_df.iloc[0]["MarketRegime"] == "BULLISH"
+    assert trade_df.iloc[0]["ActionState"] == "ACTIONABLE"
+    assert float(trade_df.iloc[0]["FinalScore"]) == 88.0
+    assert float(trade_df.iloc[0]["SetupScore"]) == 88.0
+    assert trade_df.iloc[0]["SetupRating"] == "A_SETUP"
     assert pd.isna(trade_df.iloc[0]["Actual Entry"])
 
 

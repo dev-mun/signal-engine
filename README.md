@@ -1,299 +1,317 @@
 # signal-engine
 
-A Python-based trend-following research engine for scanning equities, backtesting pullback entries, and generating executable, risk-aware options trade ideas.
+`signal-engine` is a deterministic trading research and daily workflow system for:
 
-This project is built as a practical trading workflow:
+- equity signal scanning
+- single-ticker deep dives
+- options overlay planning
+- paper-journal logging
+- proxy validation and cadence monitoring
 
-- Scan a watchlist
-- Identify actionable setups
-- Backtest the signal logic
-- Size risk using a defined stop
-- Filter option quality using IV environment
-- Generate executable defined-risk options structures
-
----
-
-# Strategy Overview
-
-This system is a **trend-pullback strategy** with defined-risk sizing and options execution logic.
-
-It is designed to:
-
-- avoid chasing extended momentum
-- enter strong uptrends on pullbacks
-- separate bullish entries, bearish entries, and long exits
-- size positions from actual stop distance at fill
-- exit using controlled, asymmetric risk rules
-- reject poor options environments
-- convert valid stock signals into executable options trades
+It is built around explainable rules. It does not use live broker execution, machine learning, or live option-chain integrations.
 
 ---
 
-# Core Strategy Logic
+## Current System
 
-## Signal Model
+The project currently runs four active strategy paths:
 
-The engine now uses three distinct strategy states:
+- `ema-rsi`
+- `four-hour-trend`
+- `rsi-bollinger-v2`
+- `swing-options-debit-spread`
 
-- `BUY`: bullish entry setup
-- `EXIT_LONG`: exit an existing long position
-- `BEARISH_ENTRY`: separate bearish setup
-
-This avoids treating a long exit as a new bearish trade.
-
----
-
-## Entry Rules (Buy Signal)
-
-A long signal is generated only when all conditions are true:
-
-- Close > EMA200
-- EMA50 > EMA200
-- RSI between 40 and 60
-- Close crosses above EMA20
-- Volume > 20-day average volume
-
-This filters for:
-
-- long-term uptrend
-- short-term pullback
-- renewed momentum
-- above-average participation
+The options layer is an overlay on top of stock signal quality. It is not a standalone prediction engine.
 
 ---
 
-## Entry Rules (Bearish Entry Signal)
+## Primary Workflow
 
-A bearish entry signal is generated only when all conditions are true:
+The preferred daily command is:
 
-- Close < EMA200
-- EMA50 < EMA200
-- RSI between 40 and 60
-- Close crosses below EMA20
-- Volume > 20-day average volume
+```bash
+python scripts/run_daily_workflow.py
+```
 
-This mirrors the long pullback logic for bearish setups.
+This runs:
 
----
+- `ema-rsi`
+- `four-hour-trend`
+- `rsi-bollinger-v2`
+- `swing-options-debit-spread` on `small_account_debit_spreads`
+- `swing-options-debit-spread` on `small_account_growth`
 
-## Exit Rules (`EXIT_LONG`)
+It also:
 
-Positions are closed when one of the following triggers:
+- saves scan CSVs
+- updates the paper trading journal
+- writes:
+  - `reports/daily/YYYY-MM-DD/daily_summary.md`
+  - `reports/daily/YYYY-MM-DD/daily_summary.json`
 
-- Stop loss: 8%
-- Take profit: 20%
-- Trailing stop: 8% below highest close since entry
-- Max hold: 60 trading days
+Useful variants:
 
-This creates:
-
-- controlled downside
-- asymmetric upside
-- winner protection
-- forced capital rotation
-
-`EXIT_LONG` means close an existing long position. It is not a bearish entry.
-
----
-
-## Execution Timing
-
-Signals are generated from the current bar's close, but trades are filled on the next trading day's open.
-
-This reduces look-ahead bias and makes fills more realistic than same-bar close execution.
+```bash
+python scripts/run_daily_workflow.py --auto-open-summary
+python scripts/run_daily_workflow.py --summary-only --date YYYY-MM-DD
+python scripts/run_daily_workflow.py --strategies swing-options-debit-spread
+python scripts/run_daily_workflow.py --skip-strategy-on-error
+```
 
 ---
 
-## Position Sizing (Risk Engine)
+## Strategy Summary
 
-Position size is based on the actual stop distance at the fill price.
+### `ema-rsi`
 
-Instead of buying full notional exposure:
+Daily swing scan for slower pullback setups across the broad-market watchlist.
 
-- Risk only 1.5% of equity per trade
-- Stop is defined as a fixed percentage below the filled entry price
-- Position size is based on `entry price - stop price`
-- Gap risk can still cause realized loss to differ from planned loss
+### `four-hour-trend`
 
-ATR remains available as a diagnostic metric, but it is no longer the direct position-sizing input.
+1H data path with 4H structure logic for medium-frequency trend continuation and tactical short setups.
 
----
+### `rsi-bollinger-v2`
 
-# Options Overlay
+Ticker-profile-driven mean reversion strategy with per-ticker deployment parameters and a focused high-beta universe.
 
-The stock engine determines **direction**.
+### `swing-options-debit-spread`
 
-The options engine determines **execution**.
+Small-account bullish options overlay using bull call debit spreads.
 
-## Options Engine Capabilities
+This path reuses the `swing-options` signal engine and adds:
 
-The options engine now performs:
+- affordability filters
+- spread-structure planning
+- reward/risk checks
+- small-account eligibility labeling
+- proxy validation reports
 
-- IV Rank proxy filtering
-- options chain selection
-- expiration targeting (30–45 DTE)
-- strike selection
-- spread pricing
-- reward/risk calculation
-- max loss / max profit calculation
-- contract sizing
-- trade quality filtering
-
-This converts a signal into an executable options trade.
+Live deployment default is the tuned debit-spread path.
 
 ---
 
-## When signal = BUY
+## Watchlist Profiles
 
-System evaluates a:
+The system uses named watchlists instead of manual ticker entry.
 
-- Call Debit Spread
-- 30–45 DTE
-- ATM / slightly ITM long call
-- OTM short call
+Examples:
 
-Then calculates:
+- `broad_market`
+- `high_beta`
+- `small_account_debit_spreads`
+- `small_account_growth`
 
-- exact expiration
-- exact strikes
-- estimated debit
-- max loss
-- max profit
-- breakeven
-- reward/risk
-- IV status
-- estimated contracts
+Current small-account debit-spread roles:
 
----
+- `small_account_debit_spreads`
+  - large-cap benchmark/context
+  - `SPY`, `QQQ`, `AAPL`, `AMD`
 
-## When signal = BEARISH_ENTRY
+- `small_account_growth`
+  - primary small-account deployment universe
+  - lower-priced liquid growth names
 
-System evaluates a:
+You can still override with explicit tickers:
 
-- Put Debit Spread
-- 30–45 DTE
-- ATM / slightly ITM long put
-- OTM short put
-
-Then calculates the same risk profile.
+```bash
+python main.py --scan NVDA,AVGO,META --strategy rsi-bollinger-v2
+python main.py --scan --strategy swing-options-debit-spread --profile small_account_growth --no-plot
+```
 
 ---
 
-## When signal = EXIT_LONG
+## Phase 1 Options Quality Layer
 
-No new bearish options trade is opened.
+The current options workflow includes a deterministic Phase 1 quality layer focused on:
 
-This signal means close the existing long position on the next open.
+- market awareness
+- false-positive reduction
+- stronger no-trade behavior
+- better reporting clarity
+
+### Market Regime
+
+Daily regime classification uses:
+
+- `SPY`
+- `QQQ`
+- `VIX`
+
+Regime states:
+
+- `BULLISH`
+- `BEARISH`
+- `MIXED`
+
+### No-Trade Filters
+
+The options overlay can force `NO_TRADE` when conditions are poor, including:
+
+- earnings too close
+- weak ATR
+- weak volume / liquidity
+- excessive extension from `EMA20`
+- regime conflict
+- expected-move exhaustion
+
+### Multi-Timeframe Confirmation
+
+Current confirmation layer uses only:
+
+- Daily
+- 4H
+
+### Scoring and Ratings
+
+Options-facing outputs now distinguish:
+
+- `BaseScore`
+  - raw underlying score before regime/no-trade overlay
+- `SetupScore`
+  - regime-aware quality score after assessment
+- `FinalScore`
+  - current user-facing score used in reports and summaries
+
+Current rating buckets:
+
+- `A_SETUP`
+- `B_SETUP`
+- `WATCHLIST`
+- `NO_TRADE`
+
+### Action State
+
+Operational summaries also normalize results into:
+
+- `ACTIONABLE`
+- `WATCHLIST`
+- `NO_TRADE`
+- `IGNORE`
+- `ERROR`
+
+This is a reporting layer only. It does not replace the underlying `Signal` or `Setup` values.
 
 ---
 
-## When signal = HOLD / HOLD_POSITION
+## Daily Summary Output
 
-No options trade is printed.
+The generated markdown summary is designed for end-of-day review.
 
-This prevents forcing trades when no setup exists.
+Current sections include:
+
+- Executive Decision
+- Top Setup
+- Market Regime
+- Breadth Snapshot
+- Market State
+- Actionable Signals
+- Large-Cap Debit Spread Context
+- Small-Account Growth Debit Spread Candidates
+- Manual Live Chain Confirmation Required
+- Key No-Trade Reasons
+- Watchlist Names
+- Ignore List
+- Workflow Failures
+- Paper Execution Checklist
+- Tomorrow Plan
+- Risk Notes
+
+The summary is deterministic and rule-based. No LLM or API is used in the workflow generator.
+
+When the top setup comes from a stock strategy instead of `swing-options-debit-spread`, the summary intentionally shows:
+
+- `Max Risk: Not calculated - directional setup only`
+- `Reward/Risk: Not calculated - no options structure generated`
+
+This is a reporting safeguard. It prevents the summary from implying that an options plan exists for a non-options setup.
 
 ---
 
-# Watchlist Scanner
+## Manual Live Chain Confirmation
 
-The scanner now runs in two stages:
+Planner output is not an executable order.
 
-1. Universe filter
-2. Signal scan on eligible names only
+Before any paper or live trade, manually confirm the spread in Fidelity:
 
-Before a ticker is scanned for signals, it must qualify as tradable.
+- same ticker
+- same expiration range, 30-45 DTE preferred
+- same long/short strikes or closest liquid equivalent
+- actual debit
+- actual max loss
+- actual max profit
+- bid/ask spread
+- volume / open interest
+- reward/risk >= 1.5
+- total debit within account cap
 
-The current eligibility filter checks:
+If live pricing differs materially from the planner estimate:
 
-- 20-day average stock dollar volume
-- listed options in the configured DTE window
-- ATM call/put open interest
-- ATM call/put daily option volume
-- ATM call/put bid/ask spread quality
-- earnings buffer
+- use real broker pricing
+- skip the trade if the structure no longer fits
+- or record it as `planner mismatch`
 
-The scanner then prints:
+---
 
-- Universe status
-- Signal
-- Setup status
-- Price
-- RSI
-- ATR
-- Distance to setup
+## Deep Dive Commands
+
+Single-ticker analysis:
+
+```bash
+python main.py --ticker TICKER --strategy ema-rsi --save-reports --no-plot
+python main.py --ticker TICKER --strategy four-hour-trend --interval 1h --save-reports --no-plot
+python main.py --ticker TICKER --strategy rsi-bollinger-v2 --save-reports --no-plot
+python main.py --ticker TICKER --strategy swing-options-debit-spread --save-reports --no-plot
+```
 
 Example:
 
 ```bash
-python main.py --scan SPY,QQQ,MSFT,META,NVDA,AAPL --no-plot
+python main.py --ticker AMD --strategy swing-options-debit-spread --save-reports --no-plot
 ```
 
-Example output:
+---
+
+## Validation and Backtests
+
+Examples:
+
+```bash
+python scripts/backtest_swing_options_debit_spread.py --mode tuned
+python scripts/backtest_small_account_growth.py
+python scripts/backtest_small_account_scan.py
+python scripts/backtest_swing_options_proxy.py
+```
+
+These reports are for proxy validation and cadence monitoring. They are not real option-chain PnL backtests.
+
+---
+
+## Reports
+
+Common report locations:
 
 ```text
-Ticker   Universe       Signal          Setup         Price     RSI    ATR  Distance
-AAPL     ELIGIBLE       HOLD            NEAR_SETUP   271.06   62.01   6.21  Needs mild pullback (-2.0 RSI)
-XYZ      FILTERED_OUT   INELIGIBLE      FILTERED_OUT  12.40    0.00   0.00  Rejected by universe filter
+reports/daily/YYYY-MM-DD/daily_summary.md
+reports/daily/YYYY-MM-DD/daily_summary.json
+reports/paper_trading_journal.xlsx
+reports/ema_rsi/watchlist_scan_YYYY-MM-DD.csv
+reports/four_hour/watchlist_scan_YYYY-MM-DD.csv
+reports/rsi_bollinger_v2/watchlist_scan_YYYY-MM-DD.csv
+reports/swing_options_debit_spread/scan_small_account_debit_spreads_YYYY-MM-DD.csv
+reports/swing_options_debit_spread/scan_small_account_growth_YYYY-MM-DD.csv
+reports/swing_options_debit_spread/*_options_plan.csv
+reports/swing_options_debit_spread/*_latest_signal.csv
 ```
 
-This lets you identify:
-
-- eligible names worth scanning
-- filtered-out names not worth trading
-- actionable setups
-- exit signals
-- near setups
-- extended names to avoid
-
 ---
 
-# Setup Status Definitions
-
-## ACTIONABLE
-Signal is live now.
-
-## EXIT
-Existing long should be exited on the next open.
-
-## NEAR_SETUP
-Close to trigger. Usually needs a mild RSI pullback.
-
-## EXTENDED
-Too hot. Avoid chasing.
-
-## WAIT
-No signal, not close.
-
-## WEAK
-Too weak. Trend not ready.
-
-## FILTERED_OUT
-Rejected before signal evaluation because the ticker failed the universe filter.
-
----
-
-# Fresh Market Data
-
-When using `--ticker` or `--scan`, data is pulled fresh from Yahoo Finance via `yfinance`.
-
-Example:
-
-```bash
-python main.py --ticker SPY
-```
-
-CSV mode is only used when explicitly passed.
-
----
-
-# Installation
+## Installation
 
 Supported Python: `3.9+`
 
-Use a virtual environment and keep the same interpreter active for installs, tests, and runs.
+Use one interpreter consistently for installs, tests, and runs.
 
-## macOS / Linux
+macOS / Linux:
 
 ```bash
 python -m venv venv
@@ -302,7 +320,7 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install -r requirements.txt
 ```
 
-## Windows
+Windows:
 
 ```bash
 python -m venv venv
@@ -313,178 +331,7 @@ python -m pip install -r requirements.txt
 
 ---
 
-# Usage
-
-## Daily Workflow
-
-Run scanner first:
-
-```bash
-python main.py --scan SPY,QQQ,MSFT,META,NVDA,AAPL --no-plot
-```
-
-Auto-save the Excel paper-trading journal while scanning:
-
-```bash
-python main.py --scan SPY,QQQ,MSFT,META,NVDA,AAPL --no-plot --journal
-```
-
-This prints:
-
-- eligible names
-- filtered-out names
-- actionable trades
-- exit signals
-- near setups
-- extended names
-- daily watchlist summary
-
-It also saves:
-
-```text
-reports/watchlist_scan_YYYY-MM-DD.csv
-reports/paper_trading_journal.xlsx
-```
-
----
-
-## Run Single Ticker Deep Dive
-
-Use when scanner shows a setup:
-
-```bash
-python main.py --ticker AAPL --save-reports --no-plot
-```
-
-This prints:
-
-- full backtest summary
-- latest signal
-- executable options trade (only if valid)
-- recent trades
-
-And saves:
-
-```text
-reports/AAPL_equity.csv
-reports/AAPL_trades.csv
-reports/AAPL_signals.csv
-reports/AAPL_latest_signal.csv
-```
-
----
-
-## Run Single Ticker with Chart
-
-```bash
-python main.py --ticker SPY
-```
-
----
-
-## Run Demo Mode
-
-```bash
-python main.py --demo
-```
-
----
-
-## Run CSV Mode
-
-CSV must contain:
-
-```text
-Date,Open,High,Low,Close,Volume
-```
-
-Run:
-
-```bash
-python main.py --csv ./data/my_stock_data.csv
-```
-
----
-
-# Reports Generated
-
-Single ticker reports:
-
-```text
-reports/SPY_equity.csv
-reports/SPY_trades.csv
-reports/SPY_signals.csv
-reports/SPY_latest_signal.csv
-```
-
-Daily scanner reports:
-
-```text
-reports/watchlist_scan_YYYY-MM-DD.csv
-```
-
----
-
-# Example Workflow
-
-## Daily
-
-Run scanner:
-
-```bash
-python main.py --scan SPY,QQQ,MSFT,META,NVDA,AAPL --no-plot
-```
-
-If no actionable setup:
-- do nothing
-
-If filtered out:
-- skip the ticker entirely
-
-If near setup:
-- monitor next session
-
-If `BUY` or `BEARISH_ENTRY`:
-- run single ticker deep dive
-
-If `EXIT_LONG`:
-- plan to close the long on the next open
-
-```bash
-python main.py --ticker MSFT --save-reports --no-plot
-```
-
-Then evaluate the executable options structure.
-
----
-
-# Universe Filter Controls
-
-Scanner defaults:
-
-- `--min-avg-dollar-volume 20000000`
-- `--min-atm-open-interest 50`
-- `--min-atm-option-volume 5`
-- `--max-atm-bid-ask-spread-pct 20`
-- `--option-min-dte 30`
-- `--option-max-dte 45`
-- `--earnings-buffer-days 3`
-
-Example:
-
-```bash
-python main.py --scan SPY,QQQ,IWM,DIA,AMZN,GOOGL --min-avg-dollar-volume 30000000 --earnings-buffer-days 7 --no-plot
-```
-
-If you want to inspect a ticker without enforcing the universe screen:
-
-```bash
-python main.py --scan SPY,QQQ,XYZ --no-universe-filter --no-plot
-```
-
----
-
-# Testing
+## Testing
 
 ```bash
 pytest
@@ -498,51 +345,25 @@ python -m pytest
 
 ---
 
-# Risk Notes
+## Limitations
 
-This is a **research and trade selection engine**, not a production execution system.
+This is a research, planning, and paper-workflow system.
 
-It does not:
+Current constraints:
 
-- place trades
-- model slippage
-- model intraday fill quality beyond next-open execution
-- model live IV Rank
-- route orders to broker
+- `PROXY VALIDATION ONLY` for options backtest layers
+- no live option chain
+- no real Greeks
+- no IV surface or skew model
+- no broker routing
+- no auto execution
+- no machine learning
 
-Use this as:
+Use it as:
 
-- signal engine
-- risk engine
-- options trade selection engine
+- a signal engine
+- a filtering engine
+- a workflow/reporting layer
+- an options planning tool
 
-Not as a broker execution engine.
-
----
-
-# Universe Seed List
-
-Useful starting universe candidates:
-
-- SPY
-- QQQ
-- IWM
-- DIA
-- MSFT
-- AMZN
-- GOOGL
-- META
-- NVDA
-- AAPL
-
-These are not assumed tradable by default. They still must pass the universe filter on the day they are scanned.
-
----
-
-# Current Best Workflow
-
-1. Provide a broad candidate universe
-2. Let the universe filter reject weak instruments
-3. Scan eligible names for `BUY`, `BEARISH_ENTRY`, or `EXIT_LONG`
-4. Run ticker deep dive on the best eligible setups
-5. Review executable options trade only for `BUY` or `BEARISH_ENTRY`
+Do not treat planner output as a broker-ready order ticket.
