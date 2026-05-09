@@ -138,6 +138,7 @@ Operational use:
 - runs all stock scans plus both debit spread profiles
 - writes the daily markdown/json summary
 - prints top decision, market regime, and top setup
+- if the top setup is from a stock strategy, risk/reward remains directional-only and no options structure is implied
 
 ## Daily Small Account Scan (After Market Close)
 

@@ -218,6 +218,13 @@ Current sections include:
 
 The summary is deterministic and rule-based. No LLM or API is used in the workflow generator.
 
+When the top setup comes from a stock strategy instead of `swing-options-debit-spread`, the summary intentionally shows:
+
+- `Max Risk: Not calculated - directional setup only`
+- `Reward/Risk: Not calculated - no options structure generated`
+
+This is a reporting safeguard. It prevents the summary from implying that an options plan exists for a non-options setup.
+
 ---
 
 ## Manual Live Chain Confirmation

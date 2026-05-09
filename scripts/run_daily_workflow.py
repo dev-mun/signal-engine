@@ -25,6 +25,7 @@ from algo_backtester.backtests.swing_options_debit_spread_backtester import (
     scan_watchlist as scan_watchlist_swing_options_debit_spread,
 )
 from algo_backtester.journal import update_paper_trading_journal
+from algo_backtester.market_regime import analyze_market_regime
 from algo_backtester.reports.daily_summary_report import (
     build_daily_summary,
     save_daily_summary,
@@ -53,12 +54,103 @@ SUPPORTED_STRATEGIES = [
 LARGE_CAP_DEBIT_PROFILE = "small_account_debit_spreads"
 GROWTH_DEBIT_PROFILE = "small_account_growth"
 DEBIT_PROFILE_RUNS = [LARGE_CAP_DEBIT_PROFILE, GROWTH_DEBIT_PROFILE]
+LEGACY_PHASE1_STRATEGIES = {"ema-rsi", "four-hour-trend", "rsi-bollinger-v2"}
 
 SCAN_RELATIVE_PATHS = {
     "ema-rsi": "ema_rsi/watchlist_scan_{date}.csv",
     "four-hour-trend": "four_hour/watchlist_scan_{date}.csv",
     "rsi-bollinger-v2": "rsi_bollinger_v2/watchlist_scan_{date}.csv",
 }
+
+
+def _compat_action_state(result: dict) -> str:
+    signal = str(result.get("Signal", ""))
+    setup = str(result.get("Setup", ""))
+
+    if signal == "ERROR":
+        return "ERROR"
+    if signal in {"BUY", "SHORT_SETUP", "SELL"}:
+        return "ACTIONABLE"
+    if setup == "NO_TRADE":
+        return "NO_TRADE"
+    if setup in {"EXTENDED", "WEAK", "WEAK_TREND", "AVOID"}:
+        return "IGNORE"
+    if setup in {"WAIT", "WATCHLIST", "NEAR_SETUP", "NEEDS_PULLBACK", "OVERSOLD"}:
+        return "WATCHLIST"
+    return "WATCHLIST"
+
+
+def _compat_setup_score(result: dict) -> float:
+    existing = result.get("Score")
+    if existing not in {None, ""}:
+        try:
+            return float(existing)
+        except (TypeError, ValueError):
+            pass
+
+    signal = str(result.get("Signal", ""))
+    setup = str(result.get("Setup", ""))
+    if signal in {"BUY", "SHORT_SETUP", "SELL"} or setup == "ACTIONABLE":
+        return 75.0
+    if setup in {"NEAR_SETUP", "NEEDS_PULLBACK"}:
+        return 62.0
+    if setup in {"WAIT", "WATCHLIST", "OVERSOLD"}:
+        return 58.0
+    if setup in {"EXTENDED", "WEAK", "WEAK_TREND", "AVOID", "NO_TRADE"}:
+        return 40.0
+    if signal == "ERROR":
+        return 0.0
+    return 55.0
+
+
+def _compat_setup_rating(result: dict) -> str:
+    setup = str(result.get("Setup", ""))
+    signal = str(result.get("Signal", ""))
+    if signal in {"BUY", "SHORT_SETUP", "SELL"} or setup == "ACTIONABLE":
+        return "B_SETUP"
+    if setup in {"WAIT", "WATCHLIST", "NEAR_SETUP", "NEEDS_PULLBACK", "OVERSOLD"}:
+        return "WATCHLIST"
+    if setup in {"EXTENDED", "WEAK", "WEAK_TREND", "AVOID", "NO_TRADE"}:
+        return "NO_TRADE"
+    if signal == "ERROR":
+        return "NO_TRADE"
+    return "WATCHLIST"
+
+
+def _compat_final_decision(action_state: str) -> str:
+    if action_state == "ACTIONABLE":
+        return "Review before market open. Only enter if setup remains intact."
+    if action_state == "WATCHLIST":
+        return "Monitor for confirmation."
+    if action_state == "ERROR":
+        return "No trade. Signal generation failed."
+    return "No trade."
+
+
+def _enrich_phase1_compatibility(
+    *,
+    strategy: str,
+    results: list[dict],
+    market_regime: str,
+    regime_reason: str,
+) -> list[dict]:
+    if strategy not in LEGACY_PHASE1_STRATEGIES:
+        return results
+
+    enriched: list[dict] = []
+    for result in results:
+        row = dict(result)
+        action_state = str(row.get("ActionState", "") or _compat_action_state(row))
+        setup_score = float(row.get("SetupScore", _compat_setup_score(row)) or 0.0)
+        row.setdefault("MarketRegime", market_regime)
+        row.setdefault("RegimeReason", regime_reason)
+        row.setdefault("SetupScore", setup_score)
+        row.setdefault("FinalScore", setup_score)
+        row.setdefault("SetupRating", _compat_setup_rating(row))
+        row.setdefault("FinalDecision", _compat_final_decision(action_state))
+        row.setdefault("ActionState", action_state)
+        enriched.append(row)
+    return enriched
 
 
 def parse_args() -> argparse.Namespace:
@@ -145,20 +237,45 @@ def _save_workflow_scan(strategy: str, report_date: str, results: list[dict], ou
     return file_path
 
 
-def _scan_strategy(strategy: str, output_dir: str, report_date: str, profile: str | None = None) -> dict[str, dict]:
+def _scan_strategy(
+    strategy: str,
+    output_dir: str,
+    report_date: str,
+    profile: str | None = None,
+    market_regime: str = "UNKNOWN",
+    regime_reason: str = "",
+) -> dict[str, dict]:
     effective_profile = profile or DEFAULT_STRATEGY_PROFILES[strategy]
     tickers = get_watchlist(effective_profile) if profile is not None else get_default_watchlist_for_strategy(strategy)
 
     if strategy == "ema-rsi":
         results = scan_watchlist_ema_rsi(tickers=tickers, config=_ema_config())
+        results = _enrich_phase1_compatibility(
+            strategy=strategy,
+            results=results,
+            market_regime=market_regime,
+            regime_reason=regime_reason,
+        )
         print_ema_rsi_scan_results(results)
         save_ema_rsi_scan_results(results, output_dir=output_dir)
     elif strategy == "four-hour-trend":
         results = scan_watchlist_four_hour(tickers=tickers, interval="1h", config=_four_hour_config())
+        results = _enrich_phase1_compatibility(
+            strategy=strategy,
+            results=results,
+            market_regime=market_regime,
+            regime_reason=regime_reason,
+        )
         print_four_hour_scan_results(results)
         save_four_hour_scan_results(results, output_dir=output_dir)
     elif strategy == "rsi-bollinger-v2":
         results = scan_watchlist_rsi_bollinger_v2(tickers=tickers, config=_rsi_bollinger_v2_config())
+        results = _enrich_phase1_compatibility(
+            strategy=strategy,
+            results=results,
+            market_regime=market_regime,
+            regime_reason=regime_reason,
+        )
         print_rsi_bollinger_v2_scan_results(results)
         save_rsi_bollinger_v2_scan_results(results, output_dir=output_dir)
     elif strategy == "swing-options-debit-spread":
@@ -197,6 +314,13 @@ def _scan_report_path(strategy: str, report_date: str, output_dir: str, profile:
 
 def _load_existing_scan_payload(strategies: list[str], report_date: str, output_dir: str) -> dict[str, dict]:
     payload: dict[str, dict] = {}
+    try:
+        regime_snapshot = analyze_market_regime()
+        market_regime = regime_snapshot.market_regime
+        regime_reason = regime_snapshot.regime_reason
+    except Exception:
+        market_regime = "UNKNOWN"
+        regime_reason = ""
 
     for strategy in strategies:
         if strategy == "swing-options-debit-spread":
@@ -219,11 +343,18 @@ def _load_existing_scan_payload(strategies: list[str], report_date: str, output_
             raise FileNotFoundError("Missing scan reports. Run full workflow first.")
 
         df = pd.read_csv(file_path)
+        results = df.to_dict(orient="records")
+        results = _enrich_phase1_compatibility(
+            strategy=strategy,
+            results=results,
+            market_regime=market_regime,
+            regime_reason=regime_reason,
+        )
         payload[_payload_key(strategy)] = {
             "strategy": strategy,
             "profile": DEFAULT_STRATEGY_PROFILES[strategy],
             "tickers": get_default_watchlist_for_strategy(strategy),
-            "results": df.to_dict(orient="records"),
+            "results": results,
         }
 
     return payload
@@ -271,6 +402,13 @@ def run_workflow(
     skip_strategy_on_error: bool,
 ) -> tuple[dict[str, dict], list[dict]]:
     failures: list[dict] = []
+    try:
+        regime_snapshot = analyze_market_regime()
+        market_regime = regime_snapshot.market_regime
+        regime_reason = regime_snapshot.regime_reason
+    except Exception:
+        market_regime = "UNKNOWN"
+        regime_reason = ""
 
     if summary_only:
         return _load_existing_scan_payload(strategies=strategies, report_date=report_date, output_dir=output_dir), failures
@@ -285,13 +423,21 @@ def run_workflow(
                         output_dir=output_dir,
                         report_date=report_date,
                         profile=profile,
+                        market_regime=market_regime,
+                        regime_reason=regime_reason,
                     )
                     for payload_key, payload in payloads.items():
                         scan_payload[payload_key] = payload
                         if not no_journal:
                             update_paper_trading_journal(results=payload["results"], output_dir=output_dir)
             else:
-                payloads = _scan_strategy(strategy=strategy, output_dir=output_dir, report_date=report_date)
+                payloads = _scan_strategy(
+                    strategy=strategy,
+                    output_dir=output_dir,
+                    report_date=report_date,
+                    market_regime=market_regime,
+                    regime_reason=regime_reason,
+                )
                 for payload_key, payload in payloads.items():
                     scan_payload[payload_key] = payload
                     if not no_journal:

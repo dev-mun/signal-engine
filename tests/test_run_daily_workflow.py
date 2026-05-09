@@ -68,6 +68,65 @@ def test_top_setup_prefers_small_account_debit_spread():
     assert top_setup == "AAPL | swing-options-debit-spread | BUY | 285/300 debit spread | Max Risk $85"
 
 
+def test_enrich_phase1_compatibility_adds_legacy_fields():
+    results = [
+        {
+            "Ticker": "CRM",
+            "Strategy": "four-hour-trend",
+            "Signal": "SHORT_SETUP",
+            "Setup": "ACTIONABLE",
+            "Price": 181.51,
+            "Reason": "4H bearish continuation setup confirmed.",
+        }
+    ]
+
+    enriched = run_daily_workflow._enrich_phase1_compatibility(
+        strategy="four-hour-trend",
+        results=results,
+        market_regime="BULLISH",
+        regime_reason="Workflow regime snapshot.",
+    )
+
+    assert enriched[0]["MarketRegime"] == "BULLISH"
+    assert enriched[0]["RegimeReason"] == "Workflow regime snapshot."
+    assert enriched[0]["SetupScore"] == 75.0
+    assert enriched[0]["FinalScore"] == 75.0
+    assert enriched[0]["SetupRating"] == "B_SETUP"
+    assert enriched[0]["FinalDecision"] == "Review before market open. Only enter if setup remains intact."
+    assert enriched[0]["ActionState"] == "ACTIONABLE"
+
+
+def test_enrich_phase1_compatibility_preserves_existing_fields():
+    results = [
+        {
+            "Ticker": "NVDA",
+            "Strategy": "rsi-bollinger-v2",
+            "Signal": "HOLD",
+            "Setup": "WAIT",
+            "MarketRegime": "MIXED",
+            "SetupScore": 61.0,
+            "FinalScore": 61.0,
+            "SetupRating": "WATCHLIST",
+            "FinalDecision": "Monitor for confirmation.",
+            "ActionState": "WATCHLIST",
+        }
+    ]
+
+    enriched = run_daily_workflow._enrich_phase1_compatibility(
+        strategy="rsi-bollinger-v2",
+        results=results,
+        market_regime="BULLISH",
+        regime_reason="Workflow regime snapshot.",
+    )
+
+    assert enriched[0]["MarketRegime"] == "MIXED"
+    assert enriched[0]["SetupScore"] == 61.0
+    assert enriched[0]["FinalScore"] == 61.0
+    assert enriched[0]["SetupRating"] == "WATCHLIST"
+    assert enriched[0]["FinalDecision"] == "Monitor for confirmation."
+    assert enriched[0]["ActionState"] == "WATCHLIST"
+
+
 def test_auto_open_does_not_crash(monkeypatch, capsys, tmp_path: Path):
     def _raise(*args, **kwargs):
         raise RuntimeError("open failed")
@@ -94,7 +153,14 @@ def test_summary_only_fails_when_reports_missing(tmp_path: Path):
 
 
 def test_skip_strategy_on_error_continues(monkeypatch):
-    def _broken_scan(strategy: str, output_dir: str, report_date: str, profile: str | None = None) -> dict:
+    def _broken_scan(
+        strategy: str,
+        output_dir: str,
+        report_date: str,
+        profile: str | None = None,
+        market_regime: str = "UNKNOWN",
+        regime_reason: str = "",
+    ) -> dict:
         if strategy == "ema-rsi":
             raise RuntimeError("scan failed")
         return {

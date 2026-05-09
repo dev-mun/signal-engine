@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ast
 from pathlib import Path
 from collections import Counter
 
@@ -89,13 +90,51 @@ def _normalized_no_trade_reasons(scan_payload: dict[str, dict]) -> list[dict[str
     reason_map = {
         "Price is too extended from EMA20.": "EXTENDED",
         "Expected move exhaustion is already present.": "EXPECTED_MOVE_EXHAUSTION",
-        "ATR is too low.": "WEAK_ATR",
-        "Average volume is too weak.": "WEAK_VOLUME",
-        "Spread/liquidity is poor.": "POOR_LIQUIDITY",
+        "ATR is too low.": "LOW_ATR",
+        "Average volume is too weak.": "LOW_VOLUME",
+        "Spread/liquidity is poor.": "LOW_LIQUIDITY",
         "Market regime strongly conflicts with the setup.": "REGIME_CONFLICT",
         "Earnings are too close.": "EARNINGS_SOON",
         "Daily trend is bearish, so bullish debit spreads are not allowed.": "DAILY_TREND_CONFLICT",
     }
+
+    def _reason_labels(raw_reasons: object) -> list[str]:
+        if raw_reasons is None:
+            return []
+        if isinstance(raw_reasons, str) and not raw_reasons.strip():
+            return []
+        if isinstance(raw_reasons, (list, tuple, set)) and not raw_reasons:
+            return []
+
+        parsed = raw_reasons
+        if isinstance(raw_reasons, str):
+            text = raw_reasons.strip()
+            if not text:
+                return []
+            if text.startswith("[") and text.endswith("]"):
+                try:
+                    parsed = ast.literal_eval(text)
+                except (ValueError, SyntaxError):
+                    parsed = text
+            else:
+                parsed = text
+
+        if isinstance(parsed, str):
+            if " | " in parsed:
+                items = [part.strip() for part in parsed.split(" | ") if part.strip()]
+            else:
+                items = [parsed.strip()]
+        elif isinstance(parsed, (list, tuple, set)):
+            items = [str(item).strip() for item in parsed if str(item).strip()]
+        else:
+            items = [str(parsed).strip()]
+
+        labels: list[str] = []
+        for item in items:
+            label = reason_map.get(item, item.upper().replace(" ", "_"))
+            if label:
+                labels.append(label)
+        return labels
 
     for strategy_payload in scan_payload.values():
         for result in strategy_payload["results"]:
@@ -103,18 +142,21 @@ def _normalized_no_trade_reasons(scan_payload: dict[str, dict]) -> list[dict[str
             if action_state not in {"NO_TRADE", "IGNORE"}:
                 continue
 
+            row_labels: set[str] = set()
+
             premium_status = str(result.get("PremiumStatus", "")).strip()
             if premium_status in IGNORE_PREMIUM_STATUSES:
-                counter[premium_status] += 1
+                row_labels.add(premium_status)
 
             setup = str(result.get("Setup", "")).strip()
             if setup in {"EXTENDED", "WEAK_TREND", "AVOID"}:
-                counter[setup] += 1
+                row_labels.add(setup)
 
-            for reason in result.get("NoTradeReasons", []) or []:
-                label = reason_map.get(str(reason).strip(), str(reason).strip().upper().replace(" ", "_"))
-                if label:
-                    counter[label] += 1
+            for label in _reason_labels(result.get("NoTradeReasons", [])):
+                row_labels.add(label)
+
+            for label in row_labels:
+                counter[label] += 1
 
     return [{"reason": reason, "count": count} for reason, count in counter.most_common(3)]
 
@@ -632,8 +674,12 @@ def render_daily_summary_markdown(summary: dict) -> str:
     if top_setup is None:
         lines.append("None")
     else:
-        max_risk_text = "N/A" if top_setup["max_risk"] is None else f"${top_setup['max_risk']:.0f}"
-        reward_risk_text = "N/A" if top_setup["reward_risk"] is None else f"{top_setup['reward_risk']:.2f}"
+        if top_setup["strategy"] == "swing-options-debit-spread":
+            max_risk_text = "N/A" if top_setup["max_risk"] is None else f"${top_setup['max_risk']:.0f}"
+            reward_risk_text = "N/A" if top_setup["reward_risk"] is None else f"{top_setup['reward_risk']:.2f}"
+        else:
+            max_risk_text = "Not calculated - directional setup only"
+            reward_risk_text = "Not calculated - no options structure generated"
         lines.extend(
             [
                 f"Ticker: {top_setup['ticker']}",

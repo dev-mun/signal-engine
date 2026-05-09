@@ -198,6 +198,41 @@ def test_render_and_save_daily_summary(tmp_path: Path):
     assert payload["executive_decision"] == "One valid setup: AAPL debit spread"
 
 
+def test_non_options_top_setup_uses_directional_wording():
+    payload = _sample_scan_payload()
+    payload["swing-options-debit-spread:small_account_growth"]["results"][0]["Signal"] = "HOLD"
+    payload["swing-options-debit-spread:small_account_growth"]["results"][0]["ActionState"] = "WATCHLIST"
+    payload["swing-options-debit-spread:small_account_debit_spreads"]["results"][0]["Signal"] = "HOLD"
+    payload["swing-options-debit-spread:small_account_debit_spreads"]["results"][0]["ActionState"] = "WATCHLIST"
+    payload["four-hour-trend"] = {
+        "strategy": "four-hour-trend",
+        "profile": "broad_market",
+        "tickers": ["CRM"],
+        "results": [
+            {
+                "Ticker": "CRM",
+                "Strategy": "four-hour-trend",
+                "Signal": "SHORT_SETUP",
+                "Setup": "ACTIONABLE",
+                "ActionState": "ACTIONABLE",
+                "Price": 181.51,
+                "MarketRegime": "BULLISH",
+                "FinalScore": 75.0,
+                "SetupScore": 75.0,
+                "SetupRating": "B_SETUP",
+                "FinalDecision": "Review before market open. Only enter if setup remains intact.",
+                "Reason": "4H bearish continuation setup confirmed.",
+            }
+        ],
+    }
+
+    summary = build_daily_summary(scan_payload=payload, report_date="2026-05-05")
+    markdown = render_daily_summary_markdown(summary)
+
+    assert "Max Risk: Not calculated - directional setup only" in markdown
+    assert "Reward/Risk: Not calculated - no options structure generated" in markdown
+
+
 def test_blocked_wait_setup_moves_to_ignore_only():
     payload = _sample_scan_payload()
     payload["swing-options-debit-spread:small_account_growth"]["results"].append(
@@ -302,3 +337,101 @@ def test_watchlist_and_ignore_follow_action_state():
 
     assert ("PLTR", "four-hour-trend") in watchlist_pairs
     assert ("SHOP", "four-hour-trend") in ignore_pairs
+
+
+def test_key_no_trade_reasons_aggregate_full_labels_without_character_truncation():
+    payload = {
+        "swing-options-debit-spread:small_account_growth": {
+            "strategy": "swing-options-debit-spread",
+            "profile": "small_account_growth",
+            "tickers": ["AAPL", "AMD", "PLTR"],
+            "results": [
+                {
+                    "Ticker": "AAPL",
+                    "Strategy": "swing-options-debit-spread",
+                    "Signal": "HOLD",
+                    "Setup": "NO_TRADE",
+                    "ActionState": "NO_TRADE",
+                    "NoTradeReasons": "['Price is too extended from EMA20.', 'Expected move exhaustion is already present.']",
+                    "Reason": "No trade.",
+                },
+                {
+                    "Ticker": "AMD",
+                    "Strategy": "swing-options-debit-spread",
+                    "Signal": "HOLD",
+                    "Setup": "NO_TRADE",
+                    "ActionState": "NO_TRADE",
+                    "NoTradeReasons": "Price is too extended from EMA20. | ATR is too low.",
+                    "Reason": "No trade.",
+                },
+                {
+                    "Ticker": "PLTR",
+                    "Strategy": "swing-options-debit-spread",
+                    "Signal": "HOLD",
+                    "Setup": "EXTENDED",
+                    "ActionState": "IGNORE",
+                    "NoTradeReasons": ["Price is too extended from EMA20.", "Price is too extended from EMA20."],
+                    "Reason": "No trade.",
+                },
+            ],
+        }
+    }
+
+    summary = build_daily_summary(scan_payload=payload, report_date="2026-05-05")
+
+    assert summary["key_no_trade_reasons"][0] == {"reason": "EXTENDED", "count": 3}
+    labels = {row["reason"] for row in summary["key_no_trade_reasons"]}
+    assert "EXPECTED_MOVE_EXHAUSTION" in labels
+    assert "LOW_ATR" in labels
+    assert "E" not in labels
+    assert "O" not in labels
+    assert "T" not in labels
+
+
+def test_key_no_trade_reasons_deduplicate_per_ticker():
+    payload = {
+        "swing-options-debit-spread:small_account_growth": {
+            "strategy": "swing-options-debit-spread",
+            "profile": "small_account_growth",
+            "tickers": ["AAPL"],
+            "results": [
+                {
+                    "Ticker": "AAPL",
+                    "Strategy": "swing-options-debit-spread",
+                    "Signal": "HOLD",
+                    "Setup": "EXTENDED",
+                    "ActionState": "IGNORE",
+                    "NoTradeReasons": [
+                        "Price is too extended from EMA20.",
+                        "Price is too extended from EMA20.",
+                    ],
+                    "Reason": "No trade.",
+                }
+            ],
+        }
+    }
+
+    summary = build_daily_summary(scan_payload=payload, report_date="2026-05-05")
+    assert summary["key_no_trade_reasons"][0] == {"reason": "EXTENDED", "count": 1}
+
+
+def test_key_no_trade_reasons_render_stably_in_markdown():
+    payload = _sample_scan_payload()
+    payload["swing-options-debit-spread:small_account_growth"]["results"].append(
+        {
+            "Ticker": "PLTR",
+            "Strategy": "swing-options-debit-spread",
+            "Signal": "HOLD",
+            "Setup": "NO_TRADE",
+            "ActionState": "NO_TRADE",
+            "NoTradeReasons": "['Expected move exhaustion is already present.']",
+            "Reason": "No trade.",
+        }
+    )
+
+    summary = build_daily_summary(scan_payload=payload, report_date="2026-05-05")
+    markdown = render_daily_summary_markdown(summary)
+
+    assert "## Key No-Trade Reasons" in markdown
+    assert "- EXPECTED_MOVE_EXHAUSTION:" in markdown
+    assert "- E:" not in markdown
