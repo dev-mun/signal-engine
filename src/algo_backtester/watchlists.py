@@ -3,6 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+# Metals are routed separately from high-beta equity momentum systems. SLV remains
+# available as a tactical options vehicle, while GLD is reserved as macro exposure
+# until premium and liquidity filters can safely govern small-account deployment.
+# TODO: Add regime-aware ticker routing so profiles can adapt to macro state shifts.
+# TODO: Add IV-aware filtering before metals tickers are promoted into options scans.
+# TODO: Add options liquidity scoring for ETF-specific chain quality checks.
+# TODO: Add max premium filters before GLD or other higher-cost underlyings enter small-account profiles.
+# TODO: Add sector risk exposure controls across overlapping watchlist profiles.
 WATCHLIST_PROFILES = {
     "broad_market": [
         "SPY",
@@ -33,6 +41,12 @@ WATCHLIST_PROFILES = {
         "UBER",
         "PANW",
         "CRWD",
+        "SLV",
+    ],
+    "metals_macro": [
+        "GLD",
+        "SLV",
+        "GDX",
     ],
     "high_beta": [
         "NVDA",
@@ -63,18 +77,24 @@ WATCHLIST_PROFILES = {
         "AAPL",
         "MSFT",
         "AMD",
+        "SLV",
     ],
+    # SLV stays in the tactical small-account options basket because it is liquid,
+    # relatively affordable, and usable for directional call structures.
     "small_account_options": [
         "SPY",
         "QQQ",
         "AAPL",
         "AMD",
+        "SLV",
     ],
+    # GLD stays out of small-account debit spreads until premium filtering logic exists.
     "small_account_debit_spreads": [
         "SPY",
         "QQQ",
         "AAPL",
         "AMD",
+        "SLV",
     ],
     "small_account_growth": [
         "PLTR",
@@ -103,6 +123,9 @@ DEFAULT_STRATEGY_PROFILES = {
     "options-momentum": "options_momentum_core",
     "swing-options": "swing_options_core",
     "swing-options-debit-spread": "small_account_debit_spreads",
+    "metals-macro": "metals_macro",
+    "metals-breakout": "metals_macro",
+    "metals-mean-reversion": "metals_macro",
 }
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "watchlists.json"

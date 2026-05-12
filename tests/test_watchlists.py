@@ -7,6 +7,7 @@ import algo_backtester.watchlists as watchlists_module
 
 def test_builtin_profiles_load():
     broad_market = watchlists_module.get_watchlist("broad_market")
+    metals_macro = watchlists_module.get_watchlist("metals_macro")
     high_beta = watchlists_module.get_watchlist("high_beta")
     options_momentum_core = watchlists_module.get_watchlist("options_momentum_core")
     swing_options_core = watchlists_module.get_watchlist("swing_options_core")
@@ -16,11 +17,12 @@ def test_builtin_profiles_load():
     custom = watchlists_module.get_watchlist("custom")
 
     assert broad_market[:6] == ["SPY", "QQQ", "DIA", "IWM", "XLK", "SMH"]
+    assert metals_macro == ["GLD", "SLV", "GDX"]
     assert high_beta == ["NVDA", "AVGO", "META", "MSFT", "DIA", "PANW", "TSM", "GOOGL", "SPY"]
     assert options_momentum_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT"]
-    assert swing_options_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT", "AMD"]
-    assert small_account_options == ["SPY", "QQQ", "AAPL", "AMD"]
-    assert small_account_debit_spreads == ["SPY", "QQQ", "AAPL", "AMD"]
+    assert swing_options_core == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT", "AMD", "SLV"]
+    assert small_account_options == ["SPY", "QQQ", "AAPL", "AMD", "SLV"]
+    assert small_account_debit_spreads == ["SPY", "QQQ", "AAPL", "AMD", "SLV"]
     assert small_account_growth == ["PLTR", "UBER", "SOFI", "HOOD", "PYPL", "RIVN", "DKNG", "AFRM", "HIMS", "CLSK", "IONQ", "TOST", "SNAP", "SHOP", "AMD"]
     assert custom == []
 
@@ -44,6 +46,15 @@ def test_strategy_default_mapping_works():
     assert watchlists_module.get_default_watchlist_for_strategy(
         "swing-options-debit-spread"
     ) == watchlists_module.get_watchlist("small_account_debit_spreads")
+    assert watchlists_module.get_default_watchlist_for_strategy(
+        "metals-macro"
+    ) == watchlists_module.get_watchlist("metals_macro")
+    assert watchlists_module.get_default_watchlist_for_strategy(
+        "metals-breakout"
+    ) == watchlists_module.get_watchlist("metals_macro")
+    assert watchlists_module.get_default_watchlist_for_strategy(
+        "metals-mean-reversion"
+    ) == watchlists_module.get_watchlist("metals_macro")
 
 
 def test_explicit_tickers_override_profile():
