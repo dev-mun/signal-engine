@@ -100,8 +100,8 @@ def _weak_trend_evaluation() -> dict:
 
 
 def test_swing_options_watchlist_profile_loads():
-    assert get_watchlist("swing_options_core") == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT", "AMD"]
-    assert get_watchlist("small_account_options") == ["SPY", "QQQ", "AAPL", "AMD"]
+    assert get_watchlist("swing_options_core") == ["SPY", "QQQ", "NVDA", "AVGO", "META", "AAPL", "MSFT", "AMD", "SLV"]
+    assert get_watchlist("small_account_options") == ["SPY", "QQQ", "AAPL", "AMD", "SLV"]
     assert get_default_watchlist_for_strategy("swing-options") == get_watchlist("swing_options_core")
 
 

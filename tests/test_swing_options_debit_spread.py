@@ -159,7 +159,7 @@ def _assessment(**overrides) -> OptionsSignalAssessment:
 
 
 def test_debit_spread_watchlist_profile_loads():
-    assert get_watchlist("small_account_debit_spreads") == ["SPY", "QQQ", "AAPL", "AMD"]
+    assert get_watchlist("small_account_debit_spreads") == ["SPY", "QQQ", "AAPL", "AMD", "SLV"]
     assert get_default_watchlist_for_strategy("swing-options-debit-spread") == get_watchlist("small_account_debit_spreads")
 
 
